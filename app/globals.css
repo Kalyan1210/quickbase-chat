@@ -1,0 +1,299 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CSS VARIABLES & BASE STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --font-outfit: 'Outfit', system-ui, sans-serif;
+  --font-jetbrains: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: var(--font-outfit);
+}
+
+body {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  color: #f1f5f9;
+  min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SCROLLBAR STYLING
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TYPOGRAPHY UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.text-gradient {
+  background: linear-gradient(135deg, #38bdf8 0%, #f97316 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-subtle {
+  background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GLASSMORPHISM EFFECTS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.glass {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.glass-light {
+  background: rgba(241, 245, 249, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.glass-dark {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 184, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CHAT MESSAGE STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.message-user {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0.1) 100%);
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+
+.message-assistant {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INPUT STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.input-glow {
+  box-shadow: 
+    0 0 0 1px rgba(14, 165, 233, 0.1),
+    0 4px 24px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.3s ease;
+}
+
+.input-glow:focus-within {
+  box-shadow: 
+    0 0 0 2px rgba(14, 165, 233, 0.3),
+    0 4px 32px rgba(14, 165, 233, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BUTTON STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.btn-primary {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  color: white;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(14, 165, 233, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.btn-secondary:hover {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SIDEBAR STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.sidebar-item {
+  transition: all 0.15s ease;
+}
+
+.sidebar-item:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.sidebar-item.active {
+  background: rgba(14, 165, 233, 0.15);
+  border-left: 2px solid #0ea5e9;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MARKDOWN CONTENT STYLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown-content h1 { font-size: 1.5rem; }
+.markdown-content h2 { font-size: 1.25rem; }
+.markdown-content h3 { font-size: 1.1rem; }
+
+.markdown-content p {
+  margin-bottom: 1em;
+  line-height: 1.7;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.markdown-content li {
+  margin-bottom: 0.5em;
+}
+
+.markdown-content code {
+  font-family: var(--font-jetbrains);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.markdown-content pre {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 0.75em;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.markdown-content th {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LOADING ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  background: #0ea5e9;
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: 0s; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+}
+

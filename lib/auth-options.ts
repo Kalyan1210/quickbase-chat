@@ -35,15 +35,15 @@ export const authOptions: NextAuthOptions = {
       // Initial sign in - add user info to token
       if (account && user) {
         token.accessToken = account.access_token;
-        token.userId = user.id || user.email;
+        token.userId = user.id ?? user.email ?? undefined;
       }
       return token;
     },
 
     session({ session, token }) {
       if (session.user) {
-        session.user.id = (token.userId as string) || (token.email as string) || '';
-        session.accessToken = token.accessToken as string;
+        session.user.id = String(token.userId ?? token.email ?? '');
+        session.accessToken = String(token.accessToken ?? '');
       }
       return session;
     },

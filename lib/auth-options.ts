@@ -1,15 +1,13 @@
 import { NextAuthOptions } from 'next-auth';
 import AzureADProvider from 'next-auth/providers/azure-ad';
-import { PrismaAdapter } from '@next-auth/prisma-adapter';
-import { prisma } from './db';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // NEXTAUTH CONFIGURATION
-// Azure AD authentication with QuickBase token storage
+// Azure AD authentication - JWT only (no database required)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  // No adapter - using JWT only for now
   
   providers: [
     AzureADProvider({
@@ -41,7 +39,10 @@ export const authOptions: NextAuthOptions = {
         return {
           ...token,
           accessToken: account.access_token,
-          userId: user.id,
+          userId: user.id || user.email,
+          name: user.name,
+          email: user.email,
+          picture: user.image,
         };
       }
       return token;
@@ -49,32 +50,17 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.userId as string;
+        session.user.id = (token.userId as string) || (token.email as string);
+        session.user.name = token.name as string;
+        session.user.email = token.email as string;
+        session.user.image = token.picture as string;
         session.accessToken = token.accessToken as string;
       }
       return session;
     },
 
-    async signIn({ user, account }) {
-      // Store or update user in database
-      if (account && user.email) {
-        try {
-          await prisma.user.upsert({
-            where: { email: user.email },
-            update: {
-              name: user.name,
-              image: user.image,
-            },
-            create: {
-              email: user.email,
-              name: user.name,
-              image: user.image,
-            },
-          });
-        } catch (error) {
-          console.error('Error storing user:', error);
-        }
-      }
+    async signIn() {
+      // Allow all sign-ins
       return true;
     },
   },
@@ -84,7 +70,7 @@ export const authOptions: NextAuthOptions = {
       console.log(`User signed in: ${user.email}`);
     },
     async signOut({ token }) {
-      console.log(`User signed out: ${token.email}`);
+      console.log(`User signed out: ${token?.email}`);
     },
   },
 

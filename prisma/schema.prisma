@@ -111,3 +111,55 @@ model Message {
   @@index([createdAt])
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RAG - QUERY EXAMPLES & EMBEDDINGS
+// Used for retrieval-augmented generation to improve query accuracy
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model QueryExample {
+  id          String   @id @default(cuid())
+  
+  // The natural language question pattern
+  question    String   @db.Text
+  
+  // The correct QuickBase query for this question
+  query       String   @db.Text
+  
+  // Which table this query targets
+  tableName   String?
+  tableId     String?
+  
+  // Category for organizing examples
+  category    String   @default("general")  // e.g., "enrollment", "staff", "families"
+  
+  // Description of what this query does
+  description String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([tableName])
+}
+
+// Store document chunks for RAG (QuickBase docs, schema info, etc.)
+model Document {
+  id          String   @id @default(cuid())
+  
+  // Document content
+  content     String   @db.Text
+  
+  // Source of the document
+  source      String   @default("quickbase_docs")  // "quickbase_docs", "schema", "examples"
+  
+  // Title or identifier
+  title       String?
+  
+  // Metadata as JSON
+  metadata    String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+
+  @@index([source])
+}
+

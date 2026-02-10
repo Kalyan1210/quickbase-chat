@@ -27,46 +27,90 @@ export interface QueryPlan {
   explanation: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUICKBASE QUERY EXAMPLES (for better AI accuracy)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const QUERY_EXAMPLES = `
+## QuickBase Query Syntax - IMPORTANT EXAMPLES:
+
+### Equality (field equals value):
+- Filter by status: {6.EX.'Enrolled'}
+- Filter by name: {8.EX.'John Smith'}
+
+### Contains (field contains text):
+- Name contains: {8.CT.'John'}
+
+### Date Filters:
+- This month: {12.IR.'this month'}
+- This year: {12.IR.'this year'}
+- Today: {12.EX.'today'}
+- On or after date: {12.OAF.'2024-01-01'}
+- On or before date: {12.OBF.'2024-12-31'}
+
+### Comparisons:
+- Greater than: {15.GT.100}
+- Less than: {15.LT.50}
+- Greater or equal: {15.GTE.10}
+- Less or equal: {15.LTE.100}
+
+### Combining Conditions:
+- AND: {6.EX.'Enrolled'}AND{12.IR.'this month'}
+- OR: {6.EX.'Active'}OR{6.EX.'Pending'}
+
+### Common Patterns:
+- Currently enrolled: {status_field.EX.'Enrolled'}
+- Enrolled this month: {status.EX.'Enrolled'}AND{date_field.IR.'this month'}
+- Enrolled this year: {status.EX.'Enrolled'}AND{date_field.IR.'this year'}
+`;
+
 /**
- * Format the app schema for the AI context (simplified to reduce tokens)
+ * Format schema in a simple way (internal use only)
  */
-function formatSchemaForAI(schema: QuickBaseTable[]): string {
+function formatSchemaInternal(schema: QuickBaseTable[]): string {
   return schema.map(table => {
-    // Only include first 15 most important fields to reduce token usage
-    const fieldsInfo = table.fields?.slice(0, 15).map(f => 
-      `${f.label} (ID:${f.id}, ${f.fieldType})`
+    const fieldsInfo = table.fields?.slice(0, 20).map(f => 
+      `${f.label}[${f.id}]`
     ).join(', ') || 'No fields';
-    
-    return `• ${table.name} (ID:${table.id}): ${fieldsInfo}`;
+    return `${table.name}[${table.id}]: ${fieldsInfo}`;
   }).join('\n');
 }
 
 /**
- * Build a compact system prompt with QuickBase schema
+ * Build system prompt for user-facing responses
  */
-function buildSystemPrompt(schema: QuickBaseTable[]): string {
-  const schemaInfo = formatSchemaForAI(schema);
-  
-  return `You are an assistant for Early Education QuickBase app. Help users query their data.
+function buildUserFacingPrompt(): string {
+  return `You are a friendly data assistant for an Early Education program. 
 
-## Available Tables & Fields:
-${schemaInfo}
+## YOUR PERSONALITY:
+- Warm, helpful, and conversational
+- Speak in plain English - NO technical terms
+- Never mention field IDs, table IDs, or database terms
+- Never show query syntax to users
+- Act like a helpful colleague, not a computer
 
-## Query Syntax:
-- Equality: {'fieldId'.EX.'value'}
-- Contains: {'fieldId'.CT.'value'}
-- Greater/Less: {'fieldId'.GT.'value'}, {'fieldId'.LT.'value'}
-- AND/OR: {cond1}AND{cond2}, {cond1}OR{cond2}
+## HOW TO RESPOND:
+- Give clear, direct answers
+- Use simple language anyone can understand
+- If showing numbers, present them clearly
+- If showing lists, use bullet points or simple tables
+- Be encouraging and supportive
 
-## Rules:
-- READ only, never modify data
-- Be concise and helpful
-- Present data in clear tables
-- Ask for clarification if needed`;
+## EXAMPLES OF GOOD RESPONSES:
+- "You have 245 children currently enrolled in your programs."
+- "Here are the families who joined this month..."
+- "I found 12 staff members in the system."
+
+## EXAMPLES OF BAD RESPONSES (NEVER DO THIS):
+- "The Family table (ID:brxeprirp) contains..." ❌
+- "Using field ID 197 to query..." ❌
+- "The query {6.EX.'Enrolled'} returned..." ❌
+
+Remember: Users are educators and administrators, not tech people. Keep it simple and friendly!`;
 }
 
 /**
- * Extract query plan from AI response
+ * Extract query plan from AI response (internal, can be technical)
  */
 async function extractQueryPlan(
   userMessage: string,
@@ -75,38 +119,58 @@ async function extractQueryPlan(
 ): Promise<QueryPlan> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
-  const planningPrompt = `Based on the user's question, determine what QuickBase query (if any) should be executed.
+  const schemaInfo = formatSchemaInternal(schema);
+  
+  const planningPrompt = `You are a QuickBase query generator. Generate the correct query for this request.
 
-User Question: "${userMessage}"
+USER QUESTION: "${userMessage}"
 
-Available Tables:
-${schema.map(t => `- ${t.name} (ID: ${t.id}): ${t.fields?.slice(0, 10).map(f => f.label).join(', ')}`).join('\n')}
+AVAILABLE TABLES AND FIELDS (format: FieldName[FieldID]):
+${schemaInfo}
 
-Respond with ONLY a JSON object (no markdown, no explanation):
+${QUERY_EXAMPLES}
+
+RESPOND WITH ONLY A JSON OBJECT (no markdown, no backticks, no explanation):
 {
-  "intent": "query" | "count" | "list" | "report" | "help" | "clarify",
-  "tableId": "table ID if querying",
+  "intent": "query" or "count" or "list" or "help" or "clarify",
+  "tableId": "the table ID to query (e.g., brxeprirp)",
   "tableName": "human readable table name",
   "query": {
-    "select": [field IDs to select],
-    "where": "QuickBase query string or null",
-    "sortBy": [{"fieldId": 1, "order": "DESC"}] or null,
-    "top": number of records (default 25)
+    "select": [array of field IDs as numbers],
+    "where": "QuickBase query string using EXACT syntax from examples above",
+    "top": 25
   },
-  "explanation": "Brief explanation of what query will do"
+  "explanation": "what this query does"
 }
 
-If the question doesn't require a QuickBase query (like greetings), use intent "help".`;
+IMPORTANT RULES:
+1. Use EXACT query syntax from the examples above
+2. Field IDs must be numbers, not strings
+3. For "enrolled" status, look for fields like "Enrollment Status", "Status", etc.
+4. For date filters, use IR (in range) operator
+5. If unsure about the query, use intent "help" or "clarify"
+6. For counting records, use intent "count"`;
 
   try {
     const result = await model.generateContent(planningPrompt);
-    const response = result.response;
-    const text = response.text();
-
+    const text = result.response.text();
+    
     // Extract JSON from the response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]) as QueryPlan;
+      const parsed = JSON.parse(jsonMatch[0]) as QueryPlan;
+      
+      // Validate the query syntax
+      if (parsed.query?.where) {
+        // Basic validation - check for common mistakes
+        const where = parsed.query.where;
+        if (where.includes('BTW') || where.includes('(M,') || where.includes('OAF.\'21\'')) {
+          console.warn('Invalid query syntax detected, falling back to help');
+          return { intent: 'help', explanation: 'Query syntax was invalid' };
+        }
+      }
+      
+      return parsed;
     }
   } catch (error) {
     console.error('Failed to parse query plan:', error);
@@ -116,7 +180,7 @@ If the question doesn't require a QuickBase query (like greetings), use intent "
 }
 
 /**
- * Generate a natural language response based on query results
+ * Generate user-friendly response based on query results
  */
 async function generateResponse(
   userMessage: string,
@@ -128,27 +192,38 @@ async function generateResponse(
 ): Promise<string> {
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.0-flash',
-    systemInstruction: buildSystemPrompt(schema),
+    systemInstruction: buildUserFacingPrompt(),
   });
   
   // Build conversation history for Gemini format
-  const history = conversationHistory.slice(-10).map(msg => ({
+  const history = conversationHistory.slice(-6).map(msg => ({
     role: msg.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: msg.content }],
   }));
 
   const chat = model.startChat({ history });
   
-  const prompt = queryResults 
-    ? `${userMessage}\n\n[Query: ${queryPlan.explanation}]\n[Results: ${JSON.stringify(queryResults, null, 2)}]`
-    : userMessage;
+  // Build a clean prompt without exposing technical details
+  let prompt = userMessage;
+  
+  if (queryResults) {
+    if (queryResults.count !== undefined) {
+      prompt = `User asked: "${userMessage}"\n\nThe data shows: ${queryResults.count} records found.\n\nProvide a friendly, clear response.`;
+    } else if (queryResults.data) {
+      const recordCount = queryResults.metadata?.totalRecords || queryResults.data.length;
+      prompt = `User asked: "${userMessage}"\n\nFound ${recordCount} records. Here's the data:\n${JSON.stringify(queryResults.data.slice(0, 10), null, 2)}\n\nPresent this information in a friendly, easy-to-read format. DO NOT mention field IDs or technical terms.`;
+    } else if (queryResults.tables) {
+      const tableNames = queryResults.tables.map((t: {name: string}) => t.name).join(', ');
+      prompt = `User asked: "${userMessage}"\n\nAvailable data categories: ${tableNames}\n\nExplain what data is available in friendly terms.`;
+    }
+  }
 
   try {
     const result = await chat.sendMessage(prompt);
     return result.response.text();
   } catch (error) {
     console.error('Error generating response:', error);
-    return 'I apologize, but I could not generate a response. Please try again.';
+    return "I'm sorry, I had trouble processing that. Could you try asking in a different way?";
   }
 }
 
@@ -168,16 +243,19 @@ export async function processMessage(
   try {
     // Handle simple greetings without loading schema
     const lowerMessage = userMessage.toLowerCase().trim();
-    if (['hi', 'hello', 'hey', 'help', 'what can you do'].some(g => lowerMessage.includes(g)) && lowerMessage.length < 20) {
+    const greetings = ['hi', 'hello', 'hey', 'help', 'what can you do', 'good morning', 'good afternoon'];
+    
+    if (greetings.some(g => lowerMessage === g || (lowerMessage.includes(g) && lowerMessage.length < 25))) {
       return {
-        response: `Hello! I'm your Early Education data assistant. I can help you:
+        response: `Hi there! 👋 I'm your Early Education data assistant.
 
-• **Query student data** - "How many students are enrolled?"
-• **Find records** - "Show me students from [location]"
-• **Get counts** - "How many classes are there?"
-• **View reports** - "Show enrollment by program"
+I can help you with questions like:
+• "How many children are currently enrolled?"
+• "Show me families who enrolled this month"
+• "How many staff members do we have?"
+• "List the classes in our program"
 
-What would you like to know about your data?`,
+Just ask me anything about your program data and I'll find the answer for you!`,
       };
     }
 
@@ -187,26 +265,49 @@ What would you like to know about your data?`,
     // Determine what query to execute (if any)
     const queryPlan = await extractQueryPlan(userMessage, schema, conversationHistory);
     
+    console.log('Query plan:', JSON.stringify(queryPlan, null, 2));
+    
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let queryResults: any = null;
     
     // Execute the query if needed
     if (queryPlan.intent === 'query' && queryPlan.tableId && queryPlan.query) {
-      queryResults = await qbClient.queryRecords(queryPlan.tableId, {
-        select: queryPlan.query.select,
-        where: queryPlan.query.where,
-        sortBy: queryPlan.query.sortBy,
-        top: queryPlan.query.top || 25,
-      });
+      try {
+        queryResults = await qbClient.queryRecords(queryPlan.tableId, {
+          select: queryPlan.query.select,
+          where: queryPlan.query.where,
+          sortBy: queryPlan.query.sortBy,
+          top: queryPlan.query.top || 25,
+        });
+      } catch (queryError) {
+        console.error('Query execution failed:', queryError);
+        // Fall back to count if query fails
+        try {
+          const count = await qbClient.getRecordCount(queryPlan.tableId);
+          queryResults = { count, note: 'Simplified count due to query complexity' };
+        } catch {
+          queryResults = null;
+        }
+      }
     } else if (queryPlan.intent === 'count' && queryPlan.tableId) {
-      const count = await qbClient.getRecordCount(
-        queryPlan.tableId,
-        queryPlan.query?.where
-      );
-      queryResults = { count };
+      try {
+        const count = await qbClient.getRecordCount(
+          queryPlan.tableId,
+          queryPlan.query?.where
+        );
+        queryResults = { count };
+      } catch (countError) {
+        console.error('Count query failed:', countError);
+        // Try without filter
+        try {
+          const count = await qbClient.getRecordCount(queryPlan.tableId);
+          queryResults = { count, note: 'Total count (filter could not be applied)' };
+        } catch {
+          queryResults = null;
+        }
+      }
     } else if (queryPlan.intent === 'list') {
-      // Just list available tables/fields
-      queryResults = { tables: schema.map(t => ({ name: t.name, id: t.id })) };
+      queryResults = { tables: schema.map(t => ({ name: t.name })) };
     }
     
     // Generate natural language response
@@ -226,17 +327,16 @@ What would you like to know about your data?`,
   } catch (error) {
     console.error('Error processing message:', error);
     
-    // Generate a helpful error message
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
     if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
       return {
-        response: "I'm sorry, but you don't have permission to access that data. Please contact your QuickBase administrator if you believe you should have access.",
+        response: "I'm sorry, but it looks like you don't have access to that information. Please check with your administrator if you think this is a mistake.",
       };
     }
     
     return {
-      response: "I encountered an error while processing your request. Please try rephrasing your question or contact support if the issue persists.",
+      response: "I'm having a bit of trouble with that request. Could you try asking in a different way? For example, 'How many children are enrolled?' or 'Show me recent enrollments'.",
     };
   }
 }
@@ -250,13 +350,7 @@ export async function generateHelpResponse(
 ): Promise<string> {
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.0-flash',
-    systemInstruction: `You are a helpful assistant for the Early Education QuickBase application. 
-Help users understand what data is available and how to ask questions.
-
-Available data:
-${schemaContext}
-
-Be friendly, concise, and guide users on what they can ask about.`,
+    systemInstruction: buildUserFacingPrompt(),
   });
 
   try {
@@ -264,6 +358,6 @@ Be friendly, concise, and guide users on what they can ask about.`,
     return result.response.text();
   } catch (error) {
     console.error('Error generating help response:', error);
-    return 'Hello! How can I help you with your Early Education data today?';
+    return "Hi! I'm here to help you with your Early Education data. What would you like to know?";
   }
 }

@@ -20,9 +20,23 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
+  secret: process.env.NEXTAUTH_SECRET,
+
   session: {
     strategy: 'jwt',
     maxAge: 24 * 60 * 60, // 24 hours
+  },
+
+  cookies: {
+    sessionToken: {
+      name: `__Secure-next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+      },
+    },
   },
 
   pages: {
@@ -31,6 +45,14 @@ export const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // After sign in, always redirect to /chat
+      if (url.startsWith(baseUrl)) {
+        return `${baseUrl}/chat`;
+      }
+      return baseUrl;
+    },
+
     jwt({ token, user, account }) {
       // Initial sign in - add user info to token
       if (account && user) {
@@ -53,7 +75,7 @@ export const authOptions: NextAuthOptions = {
     },
   },
 
-  debug: process.env.NODE_ENV === 'development',
+  debug: true, // Enable debug for now to see what's happening
 };
 
 // Type augmentation for NextAuth

@@ -1,14 +1,12 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { QuickBaseClient, QuickBaseTable } from './quickbase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CLAUDE AI INTEGRATION
+// GEMINI AI INTEGRATION
 // Handles natural language processing and QuickBase query generation
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -30,60 +28,41 @@ export interface QueryPlan {
 }
 
 /**
- * Format the app schema for the AI context
+ * Format the app schema for the AI context (simplified to reduce tokens)
  */
 function formatSchemaForAI(schema: QuickBaseTable[]): string {
   return schema.map(table => {
-    const fieldsInfo = table.fields?.map(f => 
-      `    - ${f.label} (ID: ${f.id}, Type: ${f.fieldType}${f.required ? ', Required' : ''})`
-    ).join('\n') || '    No fields available';
+    // Only include first 15 most important fields to reduce token usage
+    const fieldsInfo = table.fields?.slice(0, 15).map(f => 
+      `${f.label} (ID:${f.id}, ${f.fieldType})`
+    ).join(', ') || 'No fields';
     
-    return `📋 Table: ${table.name} (ID: ${table.id})
-   ${table.description || 'No description'}
-   Fields:
-${fieldsInfo}`;
-  }).join('\n\n');
+    return `• ${table.name} (ID:${table.id}): ${fieldsInfo}`;
+  }).join('\n');
 }
 
 /**
- * Build the system prompt with QuickBase schema
+ * Build a compact system prompt with QuickBase schema
  */
 function buildSystemPrompt(schema: QuickBaseTable[]): string {
   const schemaInfo = formatSchemaForAI(schema);
   
-  return `You are an intelligent assistant for the Early Education QuickBase application. You help users query and understand their data using natural language.
+  return `You are an assistant for Early Education QuickBase app. Help users query their data.
 
-## Your Capabilities
-- Answer questions about data in QuickBase
-- Generate appropriate queries to fetch the requested information
-- Provide clear, helpful explanations of the data
-- Guide users on what data is available
-
-## QuickBase Application Schema
+## Available Tables & Fields:
 ${schemaInfo}
 
-## Query Syntax Reference
-When generating QuickBase queries, use this syntax:
+## Query Syntax:
 - Equality: {'fieldId'.EX.'value'}
 - Contains: {'fieldId'.CT.'value'}
-- Greater than: {'fieldId'.GT.'value'}
-- Less than: {'fieldId'.LT.'value'}
-- Date range: {'fieldId'.IR.'this month'}, {'fieldId'.IR.'last week'}
-- AND: {condition1}AND{condition2}
-- OR: {condition1}OR{condition2}
+- Greater/Less: {'fieldId'.GT.'value'}, {'fieldId'.LT.'value'}
+- AND/OR: {cond1}AND{cond2}, {cond1}OR{cond2}
 
-## Response Guidelines
-1. Always be helpful and explain what data you're fetching
-2. If you need to query data, explain what you're looking for
-3. Present data in a clear, readable format (use tables for multiple records)
-4. If a question is unclear, ask for clarification
-5. If data isn't available, explain what IS available
-6. Keep responses concise but informative
-
-## Important
-- You can ONLY READ data, never modify or delete
-- Always respect that users may have different permission levels
-- If a query returns no results, explain possible reasons`;
+## Rules:
+- READ only, never modify data
+- Be concise and helpful
+- Present data in clear tables
+- Ask for clarification if needed`;
 }
 
 /**
@@ -94,14 +73,16 @@ async function extractQueryPlan(
   schema: QuickBaseTable[],
   conversationHistory: ChatMessage[]
 ): Promise<QueryPlan> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  
   const planningPrompt = `Based on the user's question, determine what QuickBase query (if any) should be executed.
 
 User Question: "${userMessage}"
 
 Available Tables:
-${schema.map(t => `- ${t.name} (ID: ${t.id}): ${t.fields?.map(f => f.label).join(', ')}`).join('\n')}
+${schema.map(t => `- ${t.name} (ID: ${t.id}): ${t.fields?.slice(0, 10).map(f => f.label).join(', ')}`).join('\n')}
 
-Respond with a JSON object:
+Respond with ONLY a JSON object (no markdown, no explanation):
 {
   "intent": "query" | "count" | "list" | "report" | "help" | "clarify",
   "tableId": "table ID if querying",
@@ -115,30 +96,20 @@ Respond with a JSON object:
   "explanation": "Brief explanation of what query will do"
 }
 
-If the question doesn't require a QuickBase query (like greetings or help requests), use intent "help".
-If you need more information from the user, use intent "clarify".`;
-
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    messages: [
-      { role: 'user', content: planningPrompt }
-    ],
-  });
-
-  const textContent = response.content.find(block => block.type === 'text');
-  if (!textContent || textContent.type !== 'text') {
-    return { intent: 'help', explanation: 'Could not parse query plan' };
-  }
+If the question doesn't require a QuickBase query (like greetings), use intent "help".`;
 
   try {
+    const result = await model.generateContent(planningPrompt);
+    const response = result.response;
+    const text = response.text();
+
     // Extract JSON from the response
-    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]) as QueryPlan;
     }
-  } catch {
-    console.error('Failed to parse query plan');
+  } catch (error) {
+    console.error('Failed to parse query plan:', error);
   }
 
   return { intent: 'help', explanation: 'Could not determine query requirements' };
@@ -155,28 +126,30 @@ async function generateResponse(
   schema: QuickBaseTable[],
   conversationHistory: ChatMessage[]
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt(schema);
-  
-  const messages: { role: 'user' | 'assistant'; content: string }[] = [
-    ...conversationHistory.slice(-10), // Last 10 messages for context
-    {
-      role: 'user',
-      content: `${userMessage}
-
-[SYSTEM: Query executed: ${queryPlan.explanation}
-Results: ${JSON.stringify(queryResults, null, 2)}]`
-    }
-  ];
-
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages,
+  const model = genAI.getGenerativeModel({ 
+    model: 'gemini-2.0-flash',
+    systemInstruction: buildSystemPrompt(schema),
   });
+  
+  // Build conversation history for Gemini format
+  const history = conversationHistory.slice(-10).map(msg => ({
+    role: msg.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: msg.content }],
+  }));
 
-  const textContent = response.content.find(block => block.type === 'text');
-  return textContent && textContent.type === 'text' ? textContent.text : 'I apologize, but I could not generate a response.';
+  const chat = model.startChat({ history });
+  
+  const prompt = queryResults 
+    ? `${userMessage}\n\n[Query: ${queryPlan.explanation}]\n[Results: ${JSON.stringify(queryResults, null, 2)}]`
+    : userMessage;
+
+  try {
+    const result = await chat.sendMessage(prompt);
+    return result.response.text();
+  } catch (error) {
+    console.error('Error generating response:', error);
+    return 'I apologize, but I could not generate a response. Please try again.';
+  }
 }
 
 /**
@@ -193,6 +166,21 @@ export async function processMessage(
   queryResults?: any;
 }> {
   try {
+    // Handle simple greetings without loading schema
+    const lowerMessage = userMessage.toLowerCase().trim();
+    if (['hi', 'hello', 'hey', 'help', 'what can you do'].some(g => lowerMessage.includes(g)) && lowerMessage.length < 20) {
+      return {
+        response: `Hello! I'm your Early Education data assistant. I can help you:
+
+• **Query student data** - "How many students are enrolled?"
+• **Find records** - "Show me students from [location]"
+• **Get counts** - "How many classes are there?"
+• **View reports** - "Show enrollment by program"
+
+What would you like to know about your data?`,
+      };
+    }
+
     // Get the app schema for context
     const schema = await qbClient.getAppSchema();
     
@@ -260,20 +248,22 @@ export async function generateHelpResponse(
   userMessage: string,
   schemaContext: string
 ): Promise<string> {
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    system: `You are a helpful assistant for the Early Education QuickBase application. 
+  const model = genAI.getGenerativeModel({ 
+    model: 'gemini-2.0-flash',
+    systemInstruction: `You are a helpful assistant for the Early Education QuickBase application. 
 Help users understand what data is available and how to ask questions.
 
 Available data:
 ${schemaContext}
 
 Be friendly, concise, and guide users on what they can ask about.`,
-    messages: [{ role: 'user', content: userMessage }],
   });
 
-  const textContent = response.content.find(block => block.type === 'text');
-  return textContent && textContent.type === 'text' ? textContent.text : 'Hello! How can I help you with your Early Education data today?';
+  try {
+    const result = await model.generateContent(userMessage);
+    return result.response.text();
+  } catch (error) {
+    console.error('Error generating help response:', error);
+    return 'Hello! How can I help you with your Early Education data today?';
+  }
 }
-

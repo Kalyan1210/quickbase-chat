@@ -7,8 +7,6 @@ import AzureADProvider from 'next-auth/providers/azure-ad';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const authOptions: NextAuthOptions = {
-  // No adapter - using JWT only for now
-  
   providers: [
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
@@ -33,44 +31,25 @@ export const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    async jwt({ token, user, account }) {
-      // Initial sign in
+    jwt({ token, user, account }) {
+      // Initial sign in - add user info to token
       if (account && user) {
-        return {
-          ...token,
-          accessToken: account.access_token,
-          userId: user.id || user.email,
-          name: user.name,
-          email: user.email,
-          picture: user.image,
-        };
+        token.accessToken = account.access_token;
+        token.userId = user.id || user.email;
       }
       return token;
     },
 
-    async session({ session, token }) {
+    session({ session, token }) {
       if (session.user) {
-        session.user.id = (token.userId as string) || (token.email as string);
-        session.user.name = token.name as string;
-        session.user.email = token.email as string;
-        session.user.image = token.picture as string;
+        session.user.id = (token.userId as string) || (token.email as string) || '';
         session.accessToken = token.accessToken as string;
       }
       return session;
     },
 
-    async signIn() {
-      // Allow all sign-ins
+    signIn() {
       return true;
-    },
-  },
-
-  events: {
-    async signIn({ user }) {
-      console.log(`User signed in: ${user.email}`);
-    },
-    async signOut({ token }) {
-      console.log(`User signed out: ${token?.email}`);
     },
   },
 

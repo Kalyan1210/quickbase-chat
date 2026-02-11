@@ -4,4 +4,5 @@ export { ChatInterface } from './ChatInterface';
 export { Header } from './Header';
 export { Sidebar } from './Sidebar';
 export { MessageBubble } from './MessageBubble';
+export { FeedbackButtons } from './FeedbackButtons';
 

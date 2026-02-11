@@ -126,13 +126,28 @@ export function ChatInterface({ messages, isLoading, onSendMessage }: ChatInterf
           // Messages List
           <div className="max-w-4xl mx-auto py-6 px-4 space-y-6">
             <AnimatePresence mode="popLayout">
-              {messages.map((message, index) => (
-                <MessageBubble 
-                  key={message.id} 
-                  message={message}
-                  isLast={index === messages.length - 1}
-                />
-              ))}
+              {messages.map((message, index) => {
+                // Find the previous user message for feedback context
+                let previousUserMessage: string | undefined;
+                if (message.role === 'assistant') {
+                  // Look backwards for the most recent user message
+                  for (let i = index - 1; i >= 0; i--) {
+                    if (messages[i].role === 'user') {
+                      previousUserMessage = messages[i].content;
+                      break;
+                    }
+                  }
+                }
+                
+                return (
+                  <MessageBubble 
+                    key={message.id} 
+                    message={message}
+                    isLast={index === messages.length - 1}
+                    previousUserMessage={previousUserMessage}
+                  />
+                );
+              })}
             </AnimatePresence>
 
             {/* Loading Indicator */}

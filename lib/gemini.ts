@@ -26,6 +26,10 @@ import {
   getTableFields,
   getReportsForTable,
 } from './schema-cache';
+import {
+  findSimilarExamples,
+  formatExamplesForPrompt,
+} from './training-service';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
 
@@ -203,10 +207,23 @@ Just ask me anything about your program data!`,
       };
     }
 
+    // Find similar verified examples to enhance context
+    let enhancedSystemPrompt = SYSTEM_PROMPT;
+    try {
+      const similarExamples = await findSimilarExamples(userMessage, 3);
+      if (similarExamples.length > 0) {
+        const examplesContext = formatExamplesForPrompt(similarExamples);
+        enhancedSystemPrompt = `${SYSTEM_PROMPT}\n\n## VERIFIED EXAMPLES FOR REFERENCE:\n${examplesContext}`;
+        console.log(`Found ${similarExamples.length} similar verified examples for guidance`);
+      }
+    } catch (error) {
+      console.log('Could not load verified examples (db may not be ready):', error);
+    }
+
     // Create model with function calling
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: enhancedSystemPrompt,
       tools: [{ functionDeclarations: TOOLS }],
       toolConfig: {
         functionCallingConfig: {

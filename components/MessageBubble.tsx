@@ -6,6 +6,7 @@ import { User, Sparkles, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { formatTime } from '@/lib/utils';
 import type { Message } from './ChatLayout';
+import { FeedbackButtons } from './FeedbackButtons';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MESSAGE BUBBLE COMPONENT
@@ -15,9 +16,10 @@ import type { Message } from './ChatLayout';
 interface MessageBubbleProps {
   message: Message;
   isLast?: boolean;
+  previousUserMessage?: string; // For feedback context
 }
 
-export function MessageBubble({ message, isLast }: MessageBubbleProps) {
+export function MessageBubble({ message, isLast, previousUserMessage }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
 
@@ -122,6 +124,14 @@ export function MessageBubble({ message, isLast }: MessageBubbleProps) {
               >
                 {message.content}
               </ReactMarkdown>
+              
+              {/* Feedback Buttons - Only show for assistant messages */}
+              {previousUserMessage && (
+                <FeedbackButtons
+                  question={previousUserMessage}
+                  response={message.content}
+                />
+              )}
             </div>
           )}
         </div>

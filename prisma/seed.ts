@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const prisma = new PrismaClient();
 
@@ -242,6 +244,52 @@ Date range options for IR:
   }
   
   console.log(`✅ Inserted ${docs.length} documentation entries`);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // VERIFIED Q&A EXAMPLES - Load from JSONL file
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('📚 Seeding verified Q&A examples...');
+  
+  try {
+    const jsonlPath = path.join(__dirname, '../training-data/verified-qa.jsonl');
+    if (fs.existsSync(jsonlPath)) {
+      const content = fs.readFileSync(jsonlPath, 'utf-8');
+      const lines = content.split('\n').filter(line => line.trim());
+      
+      // Clear existing verified QA
+      await prisma.verifiedQA.deleteMany({});
+      
+      let qaCount = 0;
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line);
+          await prisma.verifiedQA.create({
+            data: {
+              question: data.question,
+              expectedAnswer: data.expectedAnswer,
+              expectedTool: data.expectedTool || null,
+              expectedParams: data.expectedParams ? JSON.stringify(data.expectedParams) : null,
+              category: data.category || 'general',
+              tags: data.tags || [],
+              notes: data.notes || null,
+              verified: data.verified !== false, // Default to true
+              verifiedBy: 'system-seed',
+              verifiedAt: new Date(),
+            },
+          });
+          qaCount++;
+        } catch (parseError) {
+          console.warn('  Skipping malformed line:', parseError);
+        }
+      }
+      console.log(`✅ Inserted ${qaCount} verified Q&A examples`);
+    } else {
+      console.log('  No verified-qa.jsonl file found, skipping Q&A seeding');
+    }
+  } catch (error) {
+    console.warn('  Could not seed verified Q&A:', error);
+  }
+
   console.log('🎉 Seeding complete!');
 }
 

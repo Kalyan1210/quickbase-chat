@@ -163,3 +163,100 @@ model Document {
   @@index([source])
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// VERIFIED Q&A - Human-verified question/answer pairs for training
+// These are gold-standard examples the AI can learn from
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model VerifiedQA {
+  id              String   @id @default(cuid())
+  
+  // The natural language question
+  question        String   @db.Text
+  
+  // The correct/expected answer (natural language)
+  expectedAnswer  String   @db.Text
+  
+  // Which tool should be called for this question
+  expectedTool    String?  // e.g., "count_records", "run_report", "list_records"
+  
+  // Expected tool parameters as JSON
+  expectedParams  String?  @db.Text  // JSON stringified parameters
+  
+  // The actual data/count that should be returned
+  expectedData    String?  @db.Text  // JSON stringified expected result
+  
+  // Category for organizing examples
+  category        String   @default("general")  // "enrollment", "attendance", "reports", "exploration"
+  
+  // Tags for more granular filtering
+  tags            String[] @default([])
+  
+  // Verification status
+  verified        Boolean  @default(false)
+  verifiedBy      String?  // Who verified this (email or name)
+  verifiedAt      DateTime?
+  
+  // Notes for context
+  notes           String?  @db.Text
+  
+  // Usage tracking
+  usageCount      Int      @default(0)  // How often this example was used
+  successCount    Int      @default(0)  // How often it led to correct answers
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([category])
+  @@index([verified])
+  @@index([expectedTool])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEEDBACK - User feedback on AI responses for continuous improvement
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model ResponseFeedback {
+  id              String   @id @default(cuid())
+  
+  // The original question
+  question        String   @db.Text
+  
+  // The AI's response
+  aiResponse      String   @db.Text
+  
+  // The tool that was called
+  toolCalled      String?
+  
+  // Tool parameters used
+  toolParams      String?  @db.Text
+  
+  // Data returned from QuickBase
+  dataReturned    String?  @db.Text
+  
+  // User feedback
+  isCorrect       Boolean?  // null = not rated, true = correct, false = incorrect
+  userComment     String?   @db.Text
+  
+  // If incorrect, what should the answer be?
+  correctedAnswer String?   @db.Text
+  
+  // Who provided feedback
+  userId          String?
+  userEmail       String?
+  
+  // Status for review
+  status          String   @default("pending")  // "pending", "reviewed", "converted"
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  
+  // Link to VerifiedQA if this was converted to a training example
+  convertedToQAId String?
+  
+  createdAt       DateTime @default(now())
+
+  @@index([isCorrect])
+  @@index([status])
+  @@index([userId])
+}
+

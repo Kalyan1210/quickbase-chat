@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // GEMINI AI SERVICE WITH FUNCTION CALLING
 // Uses structured tools for reliable, deterministic query generation
+// Full access to all tables and 900+ reports via comprehensive cache
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { GoogleGenerativeAI, FunctionCallingMode, FunctionResponsePart } from '@google/generative-ai';
@@ -16,6 +17,15 @@ import {
   ReportParams,
   TABLE_CONFIG,
 } from './tools';
+import {
+  getAllTables,
+  getAllReports,
+  searchReports,
+  findReport,
+  findTable,
+  getTableFields,
+  getReportsForTable,
+} from './schema-cache';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
 
@@ -45,6 +55,12 @@ export interface ProcessResult {
 
 const SYSTEM_PROMPT = `You are a friendly data assistant for an Early Education program called Horizons.
 
+## YOUR CAPABILITIES:
+You have FULL ACCESS to the QuickBase database including:
+- 80+ tables with all their data
+- 900+ saved reports that staff have created
+- All fields and record counts
+
 ## YOUR PERSONALITY:
 - Warm, helpful, and conversational
 - Speak in plain English - NO technical terms
@@ -52,34 +68,41 @@ const SYSTEM_PROMPT = `You are a friendly data assistant for an Early Education 
 - Act like a helpful colleague, not a computer
 
 ## HOW TO USE TOOLS:
-You have access to tools to query the data. ALWAYS use a tool when the user asks about data.
+ALWAYS use a tool when the user asks about data. Never make up numbers.
 
-**Core Tools (reliable, use first):**
+**Core Tools (fast & reliable):**
 - 'count_records' - for "how many" questions about families, children, staff, classes
 - 'list_records' - for "show me" or "list" requests
 - 'run_report' - for pre-configured summary reports
 - 'get_help' - when the user needs guidance
 
-**Exploration Tools (for discovery):**
-- 'explore_all_tables' - when user asks "what tables exist", "what data is available", "how many tables"
-- 'explore_table_fields' - when user asks about structure of a specific table
-- 'list_table_reports' - when user asks "what reports exist" for a table
-- 'run_dynamic_report' - to run any report by name (after listing reports)
-- 'query_any_table' - fallback for tables not in the core list
+**Exploration & Search Tools:**
+- 'explore_all_tables' - list ALL 80+ tables
+- 'explore_table_fields' - show fields for ANY table
+- 'list_table_reports' - show reports for ANY table
+- 'search_all_reports' - SEARCH through all 900+ reports by name/topic
+- 'run_dynamic_report' - run ANY report by name
+- 'query_any_table' - count/list from ANY table
+
+## FINDING REPORTS:
+When the user asks for a specific report:
+1. Use 'search_all_reports' to find it by name or topic
+2. Then use 'run_dynamic_report' to run it
+3. Or use 'list_table_reports' to see all reports for a table
 
 ## RESPONSE STYLE:
 - Give clear, direct answers
 - Use simple language anyone can understand
 - Present numbers clearly
 - Use bullet points for lists
-- When listing tables, organize them into categories if possible
+- When listing many items, organize them logically
 - Be encouraging and supportive
 
 ## NEVER DO THIS:
 - Never make up numbers without using a tool
 - Never mention field IDs or technical database terms to users
 - Never show query syntax to users
-- Never say "I don't have access" - you DO have access via tools`;
+- Never say "I don't have access" - you have FULL access via tools`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOOL EXECUTION - Handle AI tool calls
@@ -150,200 +173,6 @@ async function executeRunReport(
 function executeGetHelp(params: { topic?: string }): string {
   const topic = params.topic || 'general';
   return HELP_RESPONSES[topic] || HELP_RESPONSES.general;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXPLORATION TOOL HELPERS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Find a table by name (partial match)
- */
-async function findTableByName(
-  tableName: string,
-  qbClient: QuickBaseClient
-): Promise<{ id: string; name: string } | null> {
-  const tables = await qbClient.getTables();
-  const lowerName = tableName.toLowerCase();
-  
-  // Try exact match first
-  let match = tables.find(t => t.name.toLowerCase() === lowerName);
-  
-  // Try partial match
-  if (!match) {
-    match = tables.find(t => t.name.toLowerCase().includes(lowerName));
-  }
-  
-  // Try matching individual words
-  if (!match) {
-    const words = lowerName.split(/\s+/);
-    match = tables.find(t => {
-      const tableLower = t.name.toLowerCase();
-      return words.every(word => tableLower.includes(word));
-    });
-  }
-  
-  return match ? { id: match.id, name: match.name } : null;
-}
-
-/**
- * Explore fields of a table
- */
-async function exploreTableFields(
-  tableName: string,
-  qbClient: QuickBaseClient
-): Promise<{ tableName: string; fieldCount: number; fields: { name: string; type: string }[] }> {
-  const table = await findTableByName(tableName, qbClient);
-  
-  if (!table) {
-    return {
-      tableName: tableName,
-      fieldCount: 0,
-      fields: [],
-    };
-  }
-  
-  const fields = await qbClient.getTableFields(table.id);
-  
-  return {
-    tableName: table.name,
-    fieldCount: fields.length,
-    fields: fields.slice(0, 50).map(f => ({
-      name: f.label,
-      type: f.fieldType,
-    })),
-  };
-}
-
-/**
- * List reports for a table
- */
-async function listTableReports(
-  tableName: string,
-  qbClient: QuickBaseClient
-): Promise<{ tableName: string; reportCount: number; reports: { name: string; description?: string }[] }> {
-  const table = await findTableByName(tableName, qbClient);
-  
-  if (!table) {
-    return {
-      tableName: tableName,
-      reportCount: 0,
-      reports: [],
-    };
-  }
-  
-  const reports = await qbClient.getReports(table.id);
-  
-  return {
-    tableName: table.name,
-    reportCount: reports.length,
-    reports: reports.map(r => ({
-      name: r.name,
-      description: r.description,
-    })),
-  };
-}
-
-/**
- * Run a report by name
- */
-async function runDynamicReport(
-  tableName: string,
-  reportName: string,
-  qbClient: QuickBaseClient
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ data: any; tableName: string; reportName: string }> {
-  const table = await findTableByName(tableName, qbClient);
-  
-  if (!table) {
-    throw new Error(`Table "${tableName}" not found`);
-  }
-  
-  const reports = await qbClient.getReports(table.id);
-  const lowerReportName = reportName.toLowerCase();
-  
-  // Find report by name
-  let report = reports.find(r => r.name.toLowerCase() === lowerReportName);
-  if (!report) {
-    report = reports.find(r => r.name.toLowerCase().includes(lowerReportName));
-  }
-  
-  if (!report) {
-    throw new Error(`Report "${reportName}" not found in ${table.name}`);
-  }
-  
-  const result = await qbClient.runReport(table.id, report.id);
-  
-  return {
-    data: result,
-    tableName: table.name,
-    reportName: report.name,
-  };
-}
-
-/**
- * Query any table dynamically
- */
-async function queryAnyTable(
-  tableName: string,
-  action: string,
-  limit: number,
-  qbClient: QuickBaseClient
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ result: any; tableName: string; count: number }> {
-  const table = await findTableByName(tableName, qbClient);
-  
-  if (!table) {
-    throw new Error(`Table "${tableName}" not found`);
-  }
-  
-  if (action === 'count') {
-    const count = await qbClient.getRecordCount(table.id);
-    return {
-      result: { count },
-      tableName: table.name,
-      count,
-    };
-  } else {
-    // List action - get basic fields
-    const fields = await qbClient.getTableFields(table.id);
-    // Select first few important-looking fields (usually ID and name-like fields)
-    const selectFields = fields
-      .slice(0, 5)
-      .map(f => f.id);
-    
-    const result = await qbClient.queryRecords(table.id, {
-      select: selectFields,
-      top: Math.min(limit, 25),
-    });
-    
-    // Format records with field labels
-    const fieldMap = new Map(fields.map(f => [f.id.toString(), f.label]));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const formattedRecords = result.data.map((record: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const clean: Record<string, any> = {};
-      for (const [fieldId, fieldData] of Object.entries(record)) {
-        const label = fieldMap.get(fieldId) || `Field ${fieldId}`;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const value = (fieldData as any)?.value;
-        if (value !== undefined && value !== null && value !== '') {
-          clean[label] = value;
-        }
-      }
-      return clean;
-    });
-    
-    return {
-      result: {
-        records: formattedRecords,
-        totalCount: result.metadata.totalRecords,
-        showing: formattedRecords.length,
-      },
-      tableName: table.name,
-      count: result.metadata.totalRecords,
-    };
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -462,13 +291,16 @@ Just ask me anything about your program data!`,
             }
 
             // ─────────────────────────────────────────────────────────────────
-            // EXPLORATION TOOLS
+            // EXPLORATION TOOLS - Full access to all tables and 900+ reports
             // ─────────────────────────────────────────────────────────────────
             case 'explore_all_tables': {
-              const tables = await qbClient.getTables();
+              const tables = await getAllTables();
+              const reports = await getAllReports();
               toolResult = {
                 tableCount: tables.length,
+                reportCount: reports.length,
                 tables: tables.map(t => ({ name: t.name, description: t.description || '' })),
+                summary: `You have access to ${tables.length} tables and ${reports.length} reports.`,
               };
               provenance = {
                 source: 'QuickBase App Schema',
@@ -480,51 +312,147 @@ Just ask me anything about your program data!`,
 
             case 'explore_table_fields': {
               const args = call.args as { tableName: string };
-              const fieldsResult = await exploreTableFields(args.tableName, qbClient);
-              toolResult = fieldsResult;
-              provenance = {
-                source: `${fieldsResult.tableName || args.tableName} table structure`,
-                timestamp: new Date().toISOString(),
-                recordCount: fieldsResult.fieldCount,
-              };
+              const table = await findTable(args.tableName);
+              if (!table) {
+                toolResult = { error: `Table "${args.tableName}" not found` };
+              } else {
+                const fields = await getTableFields(table.id);
+                toolResult = {
+                  tableName: table.name,
+                  fieldCount: fields.length,
+                  fields: fields.slice(0, 50).map(f => ({ name: f.label, type: f.type })),
+                };
+                provenance = {
+                  source: `${table.name} table structure`,
+                  timestamp: new Date().toISOString(),
+                  recordCount: fields.length,
+                };
+              }
               break;
             }
 
             case 'list_table_reports': {
               const args = call.args as { tableName: string };
-              const reportsResult = await listTableReports(args.tableName, qbClient);
-              toolResult = reportsResult;
+              const reports = await getReportsForTable(args.tableName);
+              const table = await findTable(args.tableName);
+              toolResult = {
+                tableName: table?.name || args.tableName,
+                reportCount: reports.length,
+                reports: reports.map(r => ({ name: r.name, description: r.description || '' })),
+              };
               provenance = {
-                source: `Reports for ${reportsResult.tableName || args.tableName}`,
+                source: `Reports for ${table?.name || args.tableName}`,
                 timestamp: new Date().toISOString(),
-                recordCount: reportsResult.reportCount,
+                recordCount: reports.length,
               };
               break;
             }
 
             case 'run_dynamic_report': {
               const args = call.args as { tableName: string; reportName: string };
-              const dynamicResult = await runDynamicReport(args.tableName, args.reportName, qbClient);
-              toolResult = formatReportForAI(dynamicResult.data);
-              provenance = {
-                source: `"${args.reportName}" report`,
-                timestamp: new Date().toISOString(),
-                recordCount: dynamicResult.data?.metadata?.totalRecords || dynamicResult.data?.data?.length,
-              };
-              queryResults = dynamicResult;
+              // Use cached report lookup for fast matching
+              const report = await findReport(args.reportName, args.tableName);
+              if (!report) {
+                // Try searching if exact match fails
+                const searchResults = await searchReports(args.reportName);
+                if (searchResults.length > 0) {
+                  toolResult = {
+                    error: `Report "${args.reportName}" not found. Did you mean one of these?`,
+                    suggestions: searchResults.slice(0, 5).map(r => `${r.name} (in ${r.tableName})`),
+                  };
+                } else {
+                  toolResult = { error: `Report "${args.reportName}" not found` };
+                }
+              } else {
+                const result = await qbClient.runReport(report.tableId, report.id);
+                toolResult = formatReportForAI(result);
+                provenance = {
+                  source: `"${report.name}" report from ${report.tableName}`,
+                  timestamp: new Date().toISOString(),
+                  recordCount: result.metadata?.totalRecords || result.data?.length,
+                };
+                queryResults = result;
+              }
               break;
             }
 
             case 'query_any_table': {
               const args = call.args as { tableName: string; action: string; limit?: number };
-              const dynamicQueryResult = await queryAnyTable(args.tableName, args.action, args.limit || 10, qbClient);
-              toolResult = dynamicQueryResult.result;
-              provenance = {
-                source: `${dynamicQueryResult.tableName} table`,
-                timestamp: new Date().toISOString(),
-                recordCount: dynamicQueryResult.count,
+              const table = await findTable(args.tableName);
+              if (!table) {
+                toolResult = { error: `Table "${args.tableName}" not found` };
+              } else {
+                if (args.action === 'count') {
+                  const count = await qbClient.getRecordCount(table.id);
+                  toolResult = { count, tableName: table.name };
+                  provenance = {
+                    source: `${table.name} table`,
+                    timestamp: new Date().toISOString(),
+                    recordCount: count,
+                  };
+                } else {
+                  // List action
+                  const fields = await getTableFields(table.id);
+                  const selectFields = fields.slice(0, 5).map(f => f.id);
+                  const result = await qbClient.queryRecords(table.id, {
+                    select: selectFields,
+                    top: Math.min(args.limit || 10, 25),
+                  });
+                  
+                  // Format with field labels
+                  const fieldMap = new Map(fields.map(f => [f.id.toString(), f.label]));
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const formattedRecords = result.data.map((record: any) => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const clean: Record<string, any> = {};
+                    for (const [fieldId, fieldData] of Object.entries(record)) {
+                      const label = fieldMap.get(fieldId) || `Field ${fieldId}`;
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const value = (fieldData as any)?.value;
+                      if (value !== undefined && value !== null && value !== '') {
+                        clean[label] = value;
+                      }
+                    }
+                    return clean;
+                  });
+                  
+                  toolResult = {
+                    tableName: table.name,
+                    records: formattedRecords,
+                    totalCount: result.metadata.totalRecords,
+                    showing: formattedRecords.length,
+                  };
+                  provenance = {
+                    source: `${table.name} table`,
+                    timestamp: new Date().toISOString(),
+                    recordCount: result.metadata.totalRecords,
+                  };
+                  queryResults = result;
+                }
+              }
+              break;
+            }
+
+            case 'search_all_reports': {
+              const args = call.args as { searchQuery: string };
+              const searchResults = await searchReports(args.searchQuery);
+              const allReports = await getAllReports();
+              
+              toolResult = {
+                searchQuery: args.searchQuery,
+                totalReportsInSystem: allReports.length,
+                matchCount: searchResults.length,
+                matches: searchResults.map(r => ({
+                  name: r.name,
+                  table: r.tableName,
+                  description: r.description || '',
+                })),
               };
-              queryResults = dynamicQueryResult;
+              provenance = {
+                source: `Report search: "${args.searchQuery}"`,
+                timestamp: new Date().toISOString(),
+                recordCount: searchResults.length,
+              };
               break;
             }
 

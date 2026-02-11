@@ -206,6 +206,20 @@ export const TOOLS: FunctionDeclaration[] = [
       required: ['tableName', 'action'],
     },
   },
+  {
+    name: 'search_all_reports',
+    description: 'Search through ALL 900+ reports by name or description. Use when user asks for a specific report by name, or to find reports related to a topic.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        searchQuery: {
+          type: SchemaType.STRING,
+          description: 'The search term to find reports (e.g. "enrollment", "attendance", "expiring", "summary")',
+        },
+      },
+      required: ['searchQuery'],
+    },
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════

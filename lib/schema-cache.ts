@@ -325,9 +325,9 @@ export async function getReportCatalogSummary(): Promise<string> {
   lines.push(`Total: ${cache.reports.length} reports across ${cache.tables.length} tables\n`);
   
   // List tables with report counts
-  for (const [tableName, reports] of byTable) {
+  Array.from(byTable.entries()).forEach(([tableName, reports]) => {
     lines.push(`• ${tableName}: ${reports.length} reports`);
-  }
+  });
   
   return lines.join('\n');
 }

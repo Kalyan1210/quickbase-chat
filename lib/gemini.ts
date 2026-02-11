@@ -53,21 +53,31 @@ const SYSTEM_PROMPT = `You are a friendly data assistant for an Early Education 
 
 ## HOW TO USE TOOLS:
 You have access to tools to query the data. ALWAYS use a tool when the user asks about data.
-- Use 'count_records' for "how many" questions
-- Use 'list_records' for "show me" or "list" requests
-- Use 'run_report' for summary or detailed reports
-- Use 'get_help' when the user needs guidance
+
+**Core Tools (reliable, use first):**
+- 'count_records' - for "how many" questions about families, children, staff, classes
+- 'list_records' - for "show me" or "list" requests
+- 'run_report' - for pre-configured summary reports
+- 'get_help' - when the user needs guidance
+
+**Exploration Tools (for discovery):**
+- 'explore_all_tables' - when user asks "what tables exist", "what data is available", "how many tables"
+- 'explore_table_fields' - when user asks about structure of a specific table
+- 'list_table_reports' - when user asks "what reports exist" for a table
+- 'run_dynamic_report' - to run any report by name (after listing reports)
+- 'query_any_table' - fallback for tables not in the core list
 
 ## RESPONSE STYLE:
 - Give clear, direct answers
 - Use simple language anyone can understand
 - Present numbers clearly
 - Use bullet points for lists
+- When listing tables, organize them into categories if possible
 - Be encouraging and supportive
 
 ## NEVER DO THIS:
 - Never make up numbers without using a tool
-- Never mention technical details like table names or field IDs
+- Never mention field IDs or technical database terms to users
 - Never show query syntax to users
 - Never say "I don't have access" - you DO have access via tools`;
 
@@ -140,6 +150,200 @@ async function executeRunReport(
 function executeGetHelp(params: { topic?: string }): string {
   const topic = params.topic || 'general';
   return HELP_RESPONSES[topic] || HELP_RESPONSES.general;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPLORATION TOOL HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Find a table by name (partial match)
+ */
+async function findTableByName(
+  tableName: string,
+  qbClient: QuickBaseClient
+): Promise<{ id: string; name: string } | null> {
+  const tables = await qbClient.getTables();
+  const lowerName = tableName.toLowerCase();
+  
+  // Try exact match first
+  let match = tables.find(t => t.name.toLowerCase() === lowerName);
+  
+  // Try partial match
+  if (!match) {
+    match = tables.find(t => t.name.toLowerCase().includes(lowerName));
+  }
+  
+  // Try matching individual words
+  if (!match) {
+    const words = lowerName.split(/\s+/);
+    match = tables.find(t => {
+      const tableLower = t.name.toLowerCase();
+      return words.every(word => tableLower.includes(word));
+    });
+  }
+  
+  return match ? { id: match.id, name: match.name } : null;
+}
+
+/**
+ * Explore fields of a table
+ */
+async function exploreTableFields(
+  tableName: string,
+  qbClient: QuickBaseClient
+): Promise<{ tableName: string; fieldCount: number; fields: { name: string; type: string }[] }> {
+  const table = await findTableByName(tableName, qbClient);
+  
+  if (!table) {
+    return {
+      tableName: tableName,
+      fieldCount: 0,
+      fields: [],
+    };
+  }
+  
+  const fields = await qbClient.getTableFields(table.id);
+  
+  return {
+    tableName: table.name,
+    fieldCount: fields.length,
+    fields: fields.slice(0, 50).map(f => ({
+      name: f.label,
+      type: f.fieldType,
+    })),
+  };
+}
+
+/**
+ * List reports for a table
+ */
+async function listTableReports(
+  tableName: string,
+  qbClient: QuickBaseClient
+): Promise<{ tableName: string; reportCount: number; reports: { name: string; description?: string }[] }> {
+  const table = await findTableByName(tableName, qbClient);
+  
+  if (!table) {
+    return {
+      tableName: tableName,
+      reportCount: 0,
+      reports: [],
+    };
+  }
+  
+  const reports = await qbClient.getReports(table.id);
+  
+  return {
+    tableName: table.name,
+    reportCount: reports.length,
+    reports: reports.map(r => ({
+      name: r.name,
+      description: r.description,
+    })),
+  };
+}
+
+/**
+ * Run a report by name
+ */
+async function runDynamicReport(
+  tableName: string,
+  reportName: string,
+  qbClient: QuickBaseClient
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ data: any; tableName: string; reportName: string }> {
+  const table = await findTableByName(tableName, qbClient);
+  
+  if (!table) {
+    throw new Error(`Table "${tableName}" not found`);
+  }
+  
+  const reports = await qbClient.getReports(table.id);
+  const lowerReportName = reportName.toLowerCase();
+  
+  // Find report by name
+  let report = reports.find(r => r.name.toLowerCase() === lowerReportName);
+  if (!report) {
+    report = reports.find(r => r.name.toLowerCase().includes(lowerReportName));
+  }
+  
+  if (!report) {
+    throw new Error(`Report "${reportName}" not found in ${table.name}`);
+  }
+  
+  const result = await qbClient.runReport(table.id, report.id);
+  
+  return {
+    data: result,
+    tableName: table.name,
+    reportName: report.name,
+  };
+}
+
+/**
+ * Query any table dynamically
+ */
+async function queryAnyTable(
+  tableName: string,
+  action: string,
+  limit: number,
+  qbClient: QuickBaseClient
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ result: any; tableName: string; count: number }> {
+  const table = await findTableByName(tableName, qbClient);
+  
+  if (!table) {
+    throw new Error(`Table "${tableName}" not found`);
+  }
+  
+  if (action === 'count') {
+    const count = await qbClient.getRecordCount(table.id);
+    return {
+      result: { count },
+      tableName: table.name,
+      count,
+    };
+  } else {
+    // List action - get basic fields
+    const fields = await qbClient.getTableFields(table.id);
+    // Select first few important-looking fields (usually ID and name-like fields)
+    const selectFields = fields
+      .slice(0, 5)
+      .map(f => f.id);
+    
+    const result = await qbClient.queryRecords(table.id, {
+      select: selectFields,
+      top: Math.min(limit, 25),
+    });
+    
+    // Format records with field labels
+    const fieldMap = new Map(fields.map(f => [f.id.toString(), f.label]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const formattedRecords = result.data.map((record: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const clean: Record<string, any> = {};
+      for (const [fieldId, fieldData] of Object.entries(record)) {
+        const label = fieldMap.get(fieldId) || `Field ${fieldId}`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const value = (fieldData as any)?.value;
+        if (value !== undefined && value !== null && value !== '') {
+          clean[label] = value;
+        }
+      }
+      return clean;
+    });
+    
+    return {
+      result: {
+        records: formattedRecords,
+        totalCount: result.metadata.totalRecords,
+        showing: formattedRecords.length,
+      },
+      tableName: table.name,
+      count: result.metadata.totalRecords,
+    };
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -254,6 +458,73 @@ Just ask me anything about your program data!`,
 
             case 'get_help': {
               toolResult = executeGetHelp(call.args as { topic?: string });
+              break;
+            }
+
+            // ─────────────────────────────────────────────────────────────────
+            // EXPLORATION TOOLS
+            // ─────────────────────────────────────────────────────────────────
+            case 'explore_all_tables': {
+              const tables = await qbClient.getTables();
+              toolResult = {
+                tableCount: tables.length,
+                tables: tables.map(t => ({ name: t.name, description: t.description || '' })),
+              };
+              provenance = {
+                source: 'QuickBase App Schema',
+                timestamp: new Date().toISOString(),
+                recordCount: tables.length,
+              };
+              break;
+            }
+
+            case 'explore_table_fields': {
+              const args = call.args as { tableName: string };
+              const fieldsResult = await exploreTableFields(args.tableName, qbClient);
+              toolResult = fieldsResult;
+              provenance = {
+                source: `${fieldsResult.tableName || args.tableName} table structure`,
+                timestamp: new Date().toISOString(),
+                recordCount: fieldsResult.fieldCount,
+              };
+              break;
+            }
+
+            case 'list_table_reports': {
+              const args = call.args as { tableName: string };
+              const reportsResult = await listTableReports(args.tableName, qbClient);
+              toolResult = reportsResult;
+              provenance = {
+                source: `Reports for ${reportsResult.tableName || args.tableName}`,
+                timestamp: new Date().toISOString(),
+                recordCount: reportsResult.reportCount,
+              };
+              break;
+            }
+
+            case 'run_dynamic_report': {
+              const args = call.args as { tableName: string; reportName: string };
+              const dynamicResult = await runDynamicReport(args.tableName, args.reportName, qbClient);
+              toolResult = formatReportForAI(dynamicResult.data);
+              provenance = {
+                source: `"${args.reportName}" report`,
+                timestamp: new Date().toISOString(),
+                recordCount: dynamicResult.data?.metadata?.totalRecords || dynamicResult.data?.data?.length,
+              };
+              queryResults = dynamicResult;
+              break;
+            }
+
+            case 'query_any_table': {
+              const args = call.args as { tableName: string; action: string; limit?: number };
+              const dynamicQueryResult = await queryAnyTable(args.tableName, args.action, args.limit || 10, qbClient);
+              toolResult = dynamicQueryResult.result;
+              provenance = {
+                source: `${dynamicQueryResult.tableName} table`,
+                timestamp: new Date().toISOString(),
+                recordCount: dynamicQueryResult.count,
+              };
+              queryResults = dynamicQueryResult;
               break;
             }
 

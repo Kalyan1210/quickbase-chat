@@ -10,9 +10,12 @@ import { FunctionDeclaration, SchemaType } from '@google/generative-ai';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const TOOLS: FunctionDeclaration[] = [
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CORE TOOLS - Deterministic queries for common questions
+  // ─────────────────────────────────────────────────────────────────────────────
   {
     name: 'count_records',
-    description: 'Count records in a table. Use this for "how many" questions.',
+    description: 'Count records in a known table. Use this for "how many" questions about families, children, staff, classes, enrollments, attendance, or ICP.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -55,7 +58,7 @@ export const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'run_report',
-    description: 'Run a saved report. Use this for summaries and detailed lists.',
+    description: 'Run a pre-configured saved report. Use for enrollment summaries, expiring authorizations, etc.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -76,7 +79,7 @@ export const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'list_records',
-    description: 'List records from a table with basic info. Use for "show me" or "list" requests.',
+    description: 'List records from a known table with basic info. Use for "show me" or "list" requests.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -112,9 +115,95 @@ export const TOOLS: FunctionDeclaration[] = [
         topic: {
           type: SchemaType.STRING,
           description: 'Optional topic to get help about',
-          enum: ['enrollment', 'attendance', 'staff', 'classes', 'reports', 'general'],
+          enum: ['enrollment', 'attendance', 'staff', 'classes', 'reports', 'general', 'explore'],
         },
       },
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // EXPLORATION TOOLS - Dynamic discovery for any table/report
+  // ─────────────────────────────────────────────────────────────────────────────
+  {
+    name: 'explore_all_tables',
+    description: 'List ALL tables in the QuickBase app. Use when user asks "what tables exist", "how many tables", "show all data available", or wants to explore beyond the common tables.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        includeDescription: {
+          type: SchemaType.BOOLEAN,
+          description: 'Whether to include table descriptions (default true)',
+        },
+      },
+    },
+  },
+  {
+    name: 'explore_table_fields',
+    description: 'Show all fields/columns in a specific table. Use when user asks "what fields does X have", "show me the structure of X", or wants to know what data a table contains.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        tableName: {
+          type: SchemaType.STRING,
+          description: 'The name of the table to explore (can be partial match)',
+        },
+      },
+      required: ['tableName'],
+    },
+  },
+  {
+    name: 'list_table_reports',
+    description: 'List all saved reports for a specific table. Use when user asks "what reports exist", "show available reports", or wants to run a specific report.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        tableName: {
+          type: SchemaType.STRING,
+          description: 'The name of the table to list reports for (can be partial match)',
+        },
+      },
+      required: ['tableName'],
+    },
+  },
+  {
+    name: 'run_dynamic_report',
+    description: 'Run any saved report by its name (not just pre-configured ones). Use after listing reports to run a specific one.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        tableName: {
+          type: SchemaType.STRING,
+          description: 'The table the report belongs to',
+        },
+        reportName: {
+          type: SchemaType.STRING,
+          description: 'The exact name of the report to run',
+        },
+      },
+      required: ['tableName', 'reportName'],
+    },
+  },
+  {
+    name: 'query_any_table',
+    description: 'Query any table with a simple count or list. Use as fallback when the table is not in the core list. Less reliable but more flexible.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        tableName: {
+          type: SchemaType.STRING,
+          description: 'The name of the table to query',
+        },
+        action: {
+          type: SchemaType.STRING,
+          description: 'What to do: count records or list them',
+          enum: ['count', 'list'],
+        },
+        limit: {
+          type: SchemaType.NUMBER,
+          description: 'For list action, max records to return (default 10)',
+        },
+      },
+      required: ['tableName', 'action'],
     },
   },
 ];
@@ -372,6 +461,12 @@ export const HELP_RESPONSES: Record<string, string> = {
 • "Show me expiring authorizations"
 • "Show me enrollment by coordinator"
 
+🔍 **Explore Data:**
+• "What tables are available?"
+• "Show me all the data you can access"
+• "What fields does the Family table have?"
+• "What reports exist for families?"
+
 Just ask in plain English and I'll find the answer!`,
 
   enrollment: `For enrollment questions, you can ask:
@@ -395,10 +490,29 @@ Just ask in plain English and I'll find the answer!`,
 • "Show me active classes"
 • "How many children are in each class?"`,
 
-  reports: `Available reports you can request:
+  reports: `Available quick reports you can request:
 • "Show me current enrollment" - Summary of enrolled families
 • "Show me enrollment by coordinator" - Breakdown by Family Coordinator
 • "Show me expiring authorizations" - Authorizations expiring soon
-• "Show me families missing data" - Data quality report`,
+• "Show me families missing data" - Data quality report
+
+You can also ask "What reports exist for [table name]?" to see all available reports for any table.`,
+
+  explore: `I can explore all the data in your QuickBase app:
+
+🔍 **Discover Tables:**
+• "What tables are available?" - See all 80+ tables
+• "How many tables do we have?"
+
+📋 **Explore Table Structure:**
+• "What fields does the Family table have?"
+• "Show me the structure of the Classes table"
+
+📊 **Find Reports:**
+• "What reports exist for families?"
+• "List reports for the Clients table"
+• "Run the [report name] report"
+
+This helps you discover data beyond the common tables!`,
 };
 

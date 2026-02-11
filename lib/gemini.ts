@@ -33,6 +33,48 @@ import {
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RETRY LOGIC - Handle rate limits gracefully
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const MAX_RETRIES = 3;
+const INITIAL_DELAY_MS = 1000;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = MAX_RETRIES
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      const errorMessage = lastError.message || '';
+      
+      // Check if it's a rate limit error (429)
+      if (errorMessage.includes('429') || errorMessage.includes('Too Many Requests') || errorMessage.includes('Resource exhausted')) {
+        if (attempt < retries) {
+          const delay = INITIAL_DELAY_MS * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+          console.log(`Rate limited. Retrying in ${delay}ms (attempt ${attempt + 1}/${retries})...`);
+          await sleep(delay);
+          continue;
+        }
+      }
+      
+      // For non-rate-limit errors, throw immediately
+      throw error;
+    }
+  }
+  
+  throw lastError;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -222,7 +264,7 @@ Just ask me anything about your program data!`,
 
     // Create model with function calling
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-pro-preview',
       systemInstruction: enhancedSystemPrompt,
       tools: [{ functionDeclarations: TOOLS }],
       toolConfig: {
@@ -240,8 +282,8 @@ Just ask me anything about your program data!`,
 
     const chat = model.startChat({ history });
 
-    // Send user message
-    let result = await chat.sendMessage(userMessage);
+    // Send user message with retry logic
+    let result = await withRetry(() => chat.sendMessage(userMessage));
     let response = result.response;
     
     // Process tool calls
@@ -494,8 +536,8 @@ Just ask me anything about your program data!`,
         }
       }
 
-      // Send function results back to AI
-      result = await chat.sendMessage(functionResponses as unknown as string);
+      // Send function results back to AI with retry logic
+      result = await withRetry(() => chat.sendMessage(functionResponses as unknown as string));
       response = result.response;
       iterations++;
     }

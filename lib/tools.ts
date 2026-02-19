@@ -1,12 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // FUNCTION CALLING TOOLS - Structured tools for AI to use
 // These replace freeform query generation with deterministic functions
+// IMPORTANT: This file MUST stay aligned with business-dictionary.ts
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { FunctionDeclaration, SchemaType } from '@google/generative-ai';
+import { TABLES, REPORTS } from './business-dictionary';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOOL DEFINITIONS - What the AI can call
+// Table names align with business-dictionary.ts keys
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const TOOLS: FunctionDeclaration[] = [
@@ -15,28 +18,39 @@ export const TOOLS: FunctionDeclaration[] = [
   // ─────────────────────────────────────────────────────────────────────────────
   {
     name: 'count_records',
-    description: 'Count records in a known table. Use this for "how many" questions about families, children, staff, classes, enrollments, attendance, or ICP.',
+    description: `Count records in a known table. Use this for "how many" questions about:
+- families (Family table) - for family enrollment counts
+- child_status (Horizons Child Status table) - for children enrollment counts
+- class_enrollments (Child Class Enrollments) - for class enrollment counts
+- staff (Horizons Staff) - for staff counts
+- classes (Classes) - for class counts
+- attendance (Child Attendance & Meals) - for attendance counts
+- icp (Individual Child Plan) - for ICP counts
+- case_notes (Family Case Notes) - for case note counts
+- referrals (Admissions Referrals) - for referral counts`,
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         table: {
           type: SchemaType.STRING,
-          description: 'The table to count from',
+          description: 'The table to count from (must match business dictionary key)',
           enum: [
             'families',
-            'children',
-            'class_enrollments',
-            'staff',
-            'classes',
-            'attendance',
-            'icp',
-            'waitlist',
+            'child_status',      // Horizons Child Status - for "children enrolled" questions
+            'clients',           // Clients table - children, parents, guardians
+            'class_enrollments', // Child Class Enrollments
+            'staff',             // Horizons Staff
+            'classes',           // Classes
+            'attendance',        // Child Attendance & Meals
+            'icp',               // Individual Child Plan
+            'case_notes',        // Family Case Notes
+            'referrals',         // Admissions Referrals
           ],
         },
         status: {
           type: SchemaType.STRING,
           description: 'Optional status filter',
-          enum: ['enrolled', 'waitlist', 'alumni', 'active', 'all'],
+          enum: ['enrolled', 'waitlist', 'alumni', 'active', 'currently_enrolled', 'all'],
         },
         dateRange: {
           type: SchemaType.STRING,
@@ -79,24 +93,31 @@ export const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'list_records',
-    description: 'List records from a known table with basic info. Use for "show me" or "list" requests.',
+    description: `List records from a known table with basic info. Use for "show me" or "list" requests.
+Tables available (aligned with business dictionary):
+- families: Family records
+- child_status: Horizons Child Status (children enrollment status)
+- clients: Clients (children, parents, guardians)
+- class_enrollments: Child Class Enrollments
+- staff: Horizons Staff members
+- classes: Classes`,
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         table: {
           type: SchemaType.STRING,
-          description: 'The table to list from',
-          enum: ['families', 'children', 'staff', 'classes'],
+          description: 'The table to list from (must match business dictionary key)',
+          enum: ['families', 'child_status', 'clients', 'class_enrollments', 'staff', 'classes', 'attendance', 'case_notes'],
         },
         status: {
           type: SchemaType.STRING,
           description: 'Optional status filter',
-          enum: ['enrolled', 'waitlist', 'alumni', 'active', 'all'],
+          enum: ['enrolled', 'waitlist', 'alumni', 'active', 'currently_enrolled', 'all'],
         },
         dateRange: {
           type: SchemaType.STRING,
           description: 'Optional date range filter for when records were created/enrolled',
-          enum: ['this_month', 'last_month', 'last_30_days', 'this_year'],
+          enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'last_30_days', 'this_year'],
         },
         limit: {
           type: SchemaType.NUMBER,
@@ -234,7 +255,13 @@ export interface TableConfig {
   selectFields: number[];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TABLE_CONFIG - Aligned with business-dictionary.ts
+// Keys MUST match business dictionary keys for consistency
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export const TABLE_CONFIG: Record<string, TableConfig> = {
+  // Family table - primary table for family records
   families: {
     id: 'brxeprirp',
     name: 'Family',
@@ -242,45 +269,82 @@ export const TABLE_CONFIG: Record<string, TableConfig> = {
     dateField: 106,
     selectFields: [3, 11, 105, 106], // ID, Name, Status, Enrollment Date
   },
-  children: {
+  
+  // Clients table - children, parents, guardians (different from child_status!)
+  clients: {
+    id: 'brxepttvj',
+    name: 'Clients',
+    selectFields: [3], // ID
+  },
+  
+  // Horizons Child Status - THIS is where enrollment status is tracked
+  // Use this for "how many children enrolled" questions
+  child_status: {
     id: 'br34gm4mb',
-    name: 'Child',
+    name: 'Horizons Child Status',
     statusField: { id: 6, enrolledValue: 'Enrolled', waitlistValue: 'Waitlist' },
     dateField: 7,
-    selectFields: [3, 12, 6, 7], // ID, Child Name, Status, Status Date
+    selectFields: [3, 6, 7], // ID, Status, Status Start Date
   },
+  
+  // Child Class Enrollments - links children to classes
   class_enrollments: {
     id: 'br2egi5x3',
-    name: 'Class Enrollment',
+    name: 'Child Class Enrollments',
     statusField: { id: 27, enrolledValue: 'Currently Enrolled' },
     dateField: 6,
     selectFields: [3, 11, 25, 27, 6], // ID, Child, Class Title, Status, Start Date
   },
+  
+  // Horizons Staff
   staff: {
     id: 'brxen3xg9',
-    name: 'Staff',
+    name: 'Horizons Staff',
     selectFields: [3, 20], // ID, Name field
   },
+  
+  // Classes
   classes: {
     id: 'br2ege78m',
-    name: 'Class',
+    name: 'Classes',
     statusField: { id: 18, enrolledValue: 'Active' },
     dateField: 16,
     selectFields: [3, 21, 18, 16], // ID, Title, Status, Start Date
   },
+  
+  // Child Attendance & Meals
   attendance: {
     id: 'br2egp69w',
-    name: 'Attendance',
+    name: 'Child Attendance & Meals',
     dateField: 10,
     selectFields: [3, 10, 6], // ID, Date, Status
   },
+  
+  // Individual Child Plan (ICP)
   icp: {
     id: 'bvefn87vt',
-    name: 'ICP',
+    name: 'Individual Child Plan (ICP)',
     selectFields: [3],
   },
+  
+  // Family Case Notes
+  case_notes: {
+    id: 'brxepkm9g',
+    name: 'Family Case Notes',
+    dateField: 8,
+    selectFields: [3, 8], // ID, Date
+  },
+  
+  // Admissions Referrals
+  referrals: {
+    id: 'brxenyxrw',
+    name: 'Admissions Referrals',
+    selectFields: [3],
+  },
+  
+  // Waitlist (same as families, just filtered differently)
   waitlist: {
-    id: 'brxeprirp', // Same as families, just filtered
+    id: 'brxeprirp',
     name: 'Waitlist',
     statusField: { id: 105, enrolledValue: 'Waitlist' },
     selectFields: [3, 11, 105],

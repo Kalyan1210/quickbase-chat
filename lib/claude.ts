@@ -757,10 +757,11 @@ function formatReportForAI(reportData: any): any {
     );
     const cleaned = reportData.data.slice(0, 20).map((row: Record<string, { value: unknown }>) => {
       const mapped: Record<string, unknown> = {};
-      for (const [fieldId, payload] of Object.entries(row)) {
+      for (const [fieldId, payload] of Object.entries(row) as [string, { value: unknown }][]) {
         const value = payload?.value;
         if (value !== undefined && value !== null && value !== '') {
-          mapped[fieldMap.get(fieldId) || `Field ${fieldId}`] = value;
+          const fieldLabel = fieldMap.get(fieldId) || `Field ${fieldId}`;
+          mapped[fieldLabel] = value;
         }
       }
       return mapped;

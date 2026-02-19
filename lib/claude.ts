@@ -752,15 +752,18 @@ function formatRecordsForAI(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function formatReportForAI(reportData: any): any {
   if (reportData.data && reportData.fields) {
-    const fieldMap = new Map(
-      reportData.fields.map((f: { id: number; label: string }) => [f.id.toString(), f.label])
+    const fieldMap = new Map<string, string>(
+      reportData.fields.map((f: { id: number; label: string }) => [String(f.id), f.label])
     );
-    const cleaned = reportData.data.slice(0, 20).map((row: Record<string, { value: unknown }>) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cleaned = reportData.data.slice(0, 20).map((row: any) => {
       const mapped: Record<string, unknown> = {};
-      for (const [fieldId, payload] of Object.entries(row) as [string, { value: unknown }][]) {
+      const keys = Object.keys(row);
+      for (const key of keys) {
+        const payload = row[key];
         const value = payload?.value;
         if (value !== undefined && value !== null && value !== '') {
-          const fieldLabel = fieldMap.get(fieldId) || `Field ${fieldId}`;
+          const fieldLabel = fieldMap.get(key) || `Field ${key}`;
           mapped[fieldLabel] = value;
         }
       }

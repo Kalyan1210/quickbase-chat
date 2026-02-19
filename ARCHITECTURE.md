@@ -43,7 +43,7 @@ The QuickBase AI Chat is a natural language interface that allows users to query
 │                  (/api/chat/route.ts)                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                     AI SERVICE LAYER                            │
-│              (lib/gemini.ts - Claude Integration)               │
+│              (lib/claude.ts - Claude Integration)               │
 │                                                                 │
 │   ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │
 │   │ Tool Defs   │  │ RAG Service │  │ Schema Cache        │   │
@@ -428,7 +428,7 @@ function findSimilarExamples(question: string): VerifiedExample[] {
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                      3. CALL CLAUDE AI                                    │
-│                      lib/gemini.ts                                        │
+│                      lib/claude.ts                                        │
 │  • Send enhanced system prompt + tools + user message                     │
 │  • Model: claude-sonnet-4-20250514                                        │
 │  • AI decides: "I should call count_records tool"                         │
@@ -770,4 +770,3 @@ interface Provenance {
 | **Provenance** | Transparency about data sources |
 
 The system is designed to be **reliable**, **accurate**, and **continuously improving** through human feedback.
-

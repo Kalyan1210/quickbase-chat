@@ -1,6 +1,7 @@
 import { prisma } from './db';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TOOLS } from './tools';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRAINING SERVICE
@@ -16,6 +17,13 @@ export interface VerifiedExample {
   category: string;
   tags: string[];
   verified: boolean;
+}
+
+interface NormalizedExample {
+  question: string;
+  expectedAnswer: string;
+  expectedTool?: string;
+  expectedParams?: Record<string, unknown>;
 }
 
 // In-memory cache for verified examples
@@ -81,7 +89,6 @@ export async function findSimilarExamples(
     
     // Word overlap scoring
     const questionWords = lowerQuestion.split(/\s+/).filter(w => w.length > 2);
-    const exampleWords = exLower.split(/\s+/).filter(w => w.length > 2);
     
     for (const word of questionWords) {
       if (exLower.includes(word)) {
@@ -118,6 +125,155 @@ export async function findSimilarExamples(
     .map(s => s.example);
 }
 
+function normalizeDateRangeValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+
+  const normalized = value.toLowerCase().replace(/\s+/g, '_');
+  const map: Record<string, string> = {
+    'this_week': 'this_week',
+    'last_week': 'last_week',
+    'this_month': 'this_month',
+    'last_month': 'last_month',
+    'last_30_days': 'last_30_days',
+    'this_year': 'this_year',
+    'today': 'today',
+    'yesterday': 'yesterday',
+  };
+
+  return map[normalized] || normalized;
+}
+
+function normalizeTableValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const key = value.toLowerCase().trim();
+
+  const tableAliases: Record<string, string> = {
+    clients: 'children',
+    students: 'children',
+    child: 'children',
+    family: 'families',
+    class: 'classes',
+    classroom: 'classes',
+  };
+
+  return tableAliases[key] || key;
+}
+
+function normalizeReportValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const key = value.toLowerCase().trim();
+
+  const reportAliases: Record<string, string> = {
+    currentenrollment: 'current_enrollment',
+    current_enrollment: 'current_enrollment',
+    enrollmentbycoordinator: 'enrollment_by_coordinator',
+    enrollment_by_coordinator: 'enrollment_by_coordinator',
+    expiringauthorizations: 'expiring_authorizations',
+    expiring_authorizations: 'expiring_authorizations',
+    familiesmissingdata: 'families_missing_data',
+    families_missing_data: 'families_missing_data',
+    waitlistsummary: 'waitlist_summary',
+    waitlist_summary: 'waitlist_summary',
+  };
+
+  const compact = key.replace(/[\s-]/g, '');
+  return reportAliases[compact] || reportAliases[key] || key;
+}
+
+function normalizeToolName(toolName?: string): string | undefined {
+  if (!toolName) return undefined;
+
+  const aliases: Record<string, string> = {
+    search_reports: 'search_all_reports',
+  };
+
+  return aliases[toolName] || toolName;
+}
+
+function normalizeToolParams(
+  toolName: string,
+  params?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!params) return undefined;
+
+  const normalized: Record<string, unknown> = { ...params };
+
+  if ('entity' in normalized && !('table' in normalized)) {
+    normalized.table = normalizeTableValue(normalized.entity);
+    delete normalized.entity;
+  }
+
+  if ('dateFilter' in normalized && !('dateRange' in normalized)) {
+    normalized.dateRange = normalizeDateRangeValue(normalized.dateFilter);
+    delete normalized.dateFilter;
+  }
+
+  if ('query' in normalized && toolName === 'search_all_reports' && !('searchQuery' in normalized)) {
+    normalized.searchQuery = normalized.query;
+    delete normalized.query;
+  }
+
+  if ('reportType' in normalized && toolName === 'run_report' && !('report' in normalized)) {
+    normalized.report = normalizeReportValue(normalized.reportType);
+    delete normalized.reportType;
+  }
+
+  if ('table' in normalized) {
+    normalized.table = normalizeTableValue(normalized.table);
+  }
+
+  if ('dateRange' in normalized) {
+    normalized.dateRange = normalizeDateRangeValue(normalized.dateRange);
+  }
+
+  if ('report' in normalized) {
+    normalized.report = normalizeReportValue(normalized.report);
+  }
+
+  return normalized;
+}
+
+function isValidToolPayload(
+  toolName: string,
+  params?: Record<string, unknown>
+): boolean {
+  const tool = TOOLS.find(t => t.name === toolName);
+  if (!tool || !tool.parameters) return false;
+  if (!params) return false;
+
+  const required = ((tool.parameters as unknown as { required?: string[] }).required || []);
+  const properties = ((tool.parameters as unknown as { properties?: Record<string, { enum?: unknown[] }> }).properties || {});
+
+  for (const field of required) {
+    if (!(field in params) || params[field] === undefined || params[field] === null || params[field] === '') {
+      return false;
+    }
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    const property = properties[key];
+    if (!property) continue;
+    if (property.enum && property.enum.length > 0 && !property.enum.includes(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function normalizeExampleForPrompt(example: VerifiedExample): NormalizedExample {
+  const toolName = normalizeToolName(example.expectedTool);
+  const normalizedParams = toolName ? normalizeToolParams(toolName, example.expectedParams) : undefined;
+  const validTool = toolName && normalizedParams && isValidToolPayload(toolName, normalizedParams);
+
+  return {
+    question: example.question,
+    expectedAnswer: example.expectedAnswer,
+    expectedTool: validTool ? toolName : undefined,
+    expectedParams: validTool ? normalizedParams : undefined,
+  };
+}
+
 /**
  * Format examples as context for the AI system prompt
  */
@@ -129,17 +285,18 @@ export function formatExamplesForPrompt(examples: VerifiedExample[]): string {
   const lines = ['Here are similar questions that have been verified with correct answers:'];
   
   for (const ex of examples) {
-    lines.push(`\nQ: "${ex.question}"`);
-    if (ex.expectedTool) {
-      lines.push(`Tool: ${ex.expectedTool}`);
-      if (ex.expectedParams) {
-        lines.push(`Params: ${JSON.stringify(ex.expectedParams)}`);
+    const normalized = normalizeExampleForPrompt(ex);
+    lines.push(`\nQ: "${normalized.question}"`);
+    if (normalized.expectedTool) {
+      lines.push(`Tool: ${normalized.expectedTool}`);
+      if (normalized.expectedParams) {
+        lines.push(`Params: ${JSON.stringify(normalized.expectedParams)}`);
       }
     }
-    lines.push(`Expected Answer Pattern: ${ex.expectedAnswer}`);
+    lines.push(`Expected Answer Pattern: ${normalized.expectedAnswer}`);
   }
   
-  lines.push('\nUse these as guidance for handling similar questions.');
+  lines.push('\nUse these as guidance for handling similar questions. If no valid tool mapping is shown, do not infer tool arguments from that example.');
   
   return lines.join('\n');
 }
@@ -300,4 +457,3 @@ export async function convertFeedbackToExample(feedbackId: string): Promise<stri
     return null;
   }
 }
-

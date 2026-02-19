@@ -24,6 +24,11 @@ export interface CachedTable {
   recordCount?: number;
 }
 
+interface ScoredMatch<T> {
+  item: T;
+  score: number;
+}
+
 interface FullCache {
   tables: CachedTable[];
   reports: CachedReport[];
@@ -37,6 +42,28 @@ let fullCache: FullCache | null = null;
 
 // Cache duration: 24 hours
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function scoreNameMatch(query: string, candidate: string): number {
+  const q = normalizeText(query);
+  const c = normalizeText(candidate);
+
+  if (!q || !c) return 0;
+  if (q === c) return 100;
+  if (c.startsWith(q)) return 80;
+  if (c.includes(q)) return 60;
+
+  const words = q.split(' ').filter(w => w.length > 1);
+  if (words.length === 0) return 0;
+
+  const matchedWords = words.filter(w => c.includes(w)).length;
+  if (matchedWords === 0) return 0;
+
+  return 30 + matchedWords * 10;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CACHE INITIALIZATION
@@ -183,9 +210,20 @@ export async function searchReports(query: string): Promise<CachedReport[]> {
  * Find a specific report by name
  */
 export async function findReport(reportName: string, tableName?: string): Promise<CachedReport | null> {
+  const candidates = await findReportCandidates(reportName, tableName, 1);
+  return candidates[0] || null;
+}
+
+/**
+ * Find candidate reports by name
+ */
+export async function findReportCandidates(
+  reportName: string,
+  tableName?: string,
+  limit: number = 5
+): Promise<CachedReport[]> {
   const cache = await getFullCache();
-  const lowerReportName = reportName.toLowerCase();
-  const lowerTableName = tableName?.toLowerCase();
+  const lowerTableName = tableName?.toLowerCase().trim();
   
   // Filter by table if specified
   let candidates = cache.reports;
@@ -194,52 +232,45 @@ export async function findReport(reportName: string, tableName?: string): Promis
       r.tableName.toLowerCase().includes(lowerTableName)
     );
   }
-  
-  // Exact match
-  let match = candidates.find(r => r.name.toLowerCase() === lowerReportName);
-  
-  // Partial match
-  if (!match) {
-    match = candidates.find(r => r.name.toLowerCase().includes(lowerReportName));
-  }
-  
-  // Word match
-  if (!match) {
-    const words = lowerReportName.split(/\s+/);
-    match = candidates.find(r => {
-      const nameLower = r.name.toLowerCase();
-      return words.every(w => nameLower.includes(w));
-    });
-  }
-  
-  return match || null;
+
+  const scored: ScoredMatch<CachedReport>[] = candidates
+    .map(report => {
+      const nameScore = scoreNameMatch(reportName, report.name);
+      const descScore = scoreNameMatch(reportName, report.description || '') / 2;
+      return { item: report, score: Math.max(nameScore, descScore) };
+    })
+    .filter(match => match.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
+
+  return scored.slice(0, limit).map(match => match.item);
 }
 
 /**
  * Find a table by name
  */
 export async function findTable(tableName: string): Promise<CachedTable | null> {
+  const candidates = await findTableCandidates(tableName, 1);
+  return candidates[0] || null;
+}
+
+/**
+ * Find candidate tables by name
+ */
+export async function findTableCandidates(tableName: string, limit: number = 5): Promise<CachedTable[]> {
   const cache = await getFullCache();
-  const lowerName = tableName.toLowerCase();
-  
-  // Exact match
-  let match = cache.tables.find(t => t.name.toLowerCase() === lowerName);
-  
-  // Partial match
-  if (!match) {
-    match = cache.tables.find(t => t.name.toLowerCase().includes(lowerName));
-  }
-  
-  // Word match
-  if (!match) {
-    const words = lowerName.split(/\s+/);
-    match = cache.tables.find(t => {
-      const nameLower = t.name.toLowerCase();
-      return words.every(w => nameLower.includes(w));
-    });
-  }
-  
-  return match || null;
+
+  const scored: ScoredMatch<CachedTable>[] = cache.tables
+    .map(table => ({
+      item: table,
+      score: Math.max(
+        scoreNameMatch(tableName, table.name),
+        scoreNameMatch(tableName, table.description || '') / 2
+      ),
+    }))
+    .filter(match => match.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
+
+  return scored.slice(0, limit).map(match => match.item);
 }
 
 /**

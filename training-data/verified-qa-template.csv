@@ -1,0 +1,8 @@
+question,expected_answer,expected_tool,expected_params_json,category,tags_csv,verified,notes
+"How many families are enrolled?","There are X families currently enrolled.","count_records","{""table"":""families"",""status"":""enrolled""}","enrollment","families,count,enrolled",true,"Core count example"
+"Show me enrolled children","Here are enrolled children: [list].","list_records","{""table"":""children"",""status"":""enrolled"",""limit"":10}","enrollment","children,list,enrolled",true,"Core list example"
+"Show me expiring authorizations","Here are authorizations expiring soon: [list].","run_report","{""report"":""expiring_authorizations""}","reports","authorizations,expiring,reports",true,"Configured report"
+"What reports are available for Family?","Here are the saved reports for Family: [list].","list_table_reports","{""tableName"":""Family""}","reports","reports,family,discovery",true,"Report discovery"
+"Search enrollment reports","Here are matching enrollment reports: [list].","search_all_reports","{""searchQuery"":""enrollment""}","reports","reports,search,enrollment",true,"Report search"
+"Run Monthly Enrollment report from Family","Here are the results from Monthly Enrollment: [data].","run_dynamic_report","{""tableName"":""Family"",""reportName"":""Monthly Enrollment""}","reports","reports,run,enrollment",true,"Dynamic report execution"
+"How many records are in Head Start table?","There are X records in Head Start.","query_any_table","{""tableName"":""Head Start"",""action"":""count""}","exploration","head start,count,table",true,"Fallback tool"

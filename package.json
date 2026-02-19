@@ -15,8 +15,10 @@
     "postinstall": "prisma generate",
     "training:seed": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts seed",
     "training:export": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts export",
+    "training:import-csv": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/import-training-csv.ts",
     "training:stats": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts stats",
-    "training:review": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts review"
+    "training:review": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts review",
+    "metrics:chat": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/metrics-chat-quality.ts"
   },
   "prisma": {
     "seed": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
@@ -58,4 +60,3 @@
     "node": ">=20.0.0"
   }
 }
-

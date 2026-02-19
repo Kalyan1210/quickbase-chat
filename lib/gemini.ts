@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// GEMINI AI SERVICE WITH FUNCTION CALLING
+// CLAUDE AI SERVICE WITH TOOL USE
 // Uses structured tools for reliable, deterministic query generation
 // Full access to all tables and 900+ reports via comprehensive cache
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { GoogleGenerativeAI, FunctionCallingMode, FunctionResponsePart } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import { QuickBaseClient } from './quickbase';
 import {
   TOOLS,
@@ -31,7 +31,10 @@ import {
   formatExamplesForPrompt,
 } from './training-service';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || '',
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RETRY LOGIC - Handle rate limits gracefully
@@ -58,7 +61,7 @@ async function withRetry<T>(
       const errorMessage = lastError.message || '';
       
       // Check if it's a rate limit error (429)
-      if (errorMessage.includes('429') || errorMessage.includes('Too Many Requests') || errorMessage.includes('Resource exhausted')) {
+      if (errorMessage.includes('429') || errorMessage.includes('rate_limit') || errorMessage.includes('overloaded')) {
         if (attempt < retries) {
           const delay = INITIAL_DELAY_MS * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
           console.log(`Rate limited. Retrying in ${delay}ms (attempt ${attempt + 1}/${retries})...`);
@@ -151,6 +154,25 @@ When the user asks for a specific report:
 - Never say "I don't have access" - you have FULL access via tools`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CLAUDE TOOL DEFINITIONS - Convert from Gemini format to Claude format
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function convertToolsToClaudeFormat(): Anthropic.Tool[] {
+  return TOOLS.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: {
+      type: 'object' as const,
+      properties: tool.parameters?.properties || {},
+      required: tool.parameters?.required || [],
+    },
+  }));
+}
+
+const CLAUDE_TOOLS = convertToolsToClaudeFormat();
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // TOOL EXECUTION - Handle AI tool calls
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -222,6 +244,224 @@ function executeGetHelp(params: { topic?: string }): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// EXECUTE TOOL - Central tool execution handler
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function executeTool(
+  toolName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  toolInput: any,
+  qbClient: QuickBaseClient
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ result: any; provenance?: Provenance; queryResults?: any }> {
+  console.log(`Executing tool: ${toolName}`, toolInput);
+  
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let toolResult: any;
+  let provenance: Provenance | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let queryResults: any;
+
+  switch (toolName) {
+    case 'count_records': {
+      const countResult = await executeCountRecords(toolInput as CountParams, qbClient);
+      toolResult = { count: countResult.count };
+      provenance = countResult.provenance;
+      queryResults = countResult;
+      break;
+    }
+
+    case 'list_records': {
+      const listResult = await executeListRecords(toolInput as ListParams, qbClient);
+      toolResult = formatRecordsForAI(listResult.records, (toolInput as ListParams).table);
+      provenance = listResult.provenance;
+      queryResults = listResult;
+      break;
+    }
+
+    case 'run_report': {
+      const reportResult = await executeRunReport(toolInput as ReportParams, qbClient);
+      toolResult = formatReportForAI(reportResult.data);
+      provenance = reportResult.provenance;
+      queryResults = reportResult;
+      break;
+    }
+
+    case 'get_help': {
+      toolResult = executeGetHelp(toolInput as { topic?: string });
+      break;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // EXPLORATION TOOLS - Full access to all tables and 900+ reports
+    // ─────────────────────────────────────────────────────────────────
+    case 'explore_all_tables': {
+      const tables = await getAllTables();
+      const reports = await getAllReports();
+      toolResult = {
+        tableCount: tables.length,
+        reportCount: reports.length,
+        tables: tables.map(t => ({ name: t.name, description: t.description || '' })),
+        summary: `You have access to ${tables.length} tables and ${reports.length} reports.`,
+      };
+      provenance = {
+        source: 'QuickBase App Schema',
+        timestamp: new Date().toISOString(),
+        recordCount: tables.length,
+      };
+      break;
+    }
+
+    case 'explore_table_fields': {
+      const args = toolInput as { tableName: string };
+      const table = await findTable(args.tableName);
+      if (!table) {
+        toolResult = { error: `Table "${args.tableName}" not found` };
+      } else {
+        const fields = await getTableFields(table.id);
+        toolResult = {
+          tableName: table.name,
+          fieldCount: fields.length,
+          fields: fields.slice(0, 50).map(f => ({ name: f.label, type: f.type })),
+        };
+        provenance = {
+          source: `${table.name} table structure`,
+          timestamp: new Date().toISOString(),
+          recordCount: fields.length,
+        };
+      }
+      break;
+    }
+
+    case 'list_table_reports': {
+      const args = toolInput as { tableName: string };
+      const reports = await getReportsForTable(args.tableName);
+      const table = await findTable(args.tableName);
+      toolResult = {
+        tableName: table?.name || args.tableName,
+        reportCount: reports.length,
+        reports: reports.map(r => ({ name: r.name, description: r.description || '' })),
+      };
+      provenance = {
+        source: `Reports for ${table?.name || args.tableName}`,
+        timestamp: new Date().toISOString(),
+        recordCount: reports.length,
+      };
+      break;
+    }
+
+    case 'run_dynamic_report': {
+      const args = toolInput as { tableName: string; reportName: string };
+      const report = await findReport(args.reportName, args.tableName);
+      if (!report) {
+        const searchResults = await searchReports(args.reportName);
+        if (searchResults.length > 0) {
+          toolResult = {
+            error: `Report "${args.reportName}" not found. Did you mean one of these?`,
+            suggestions: searchResults.slice(0, 5).map(r => `${r.name} (in ${r.tableName})`),
+          };
+        } else {
+          toolResult = { error: `Report "${args.reportName}" not found` };
+        }
+      } else {
+        const result = await qbClient.runReport(report.tableId, report.id);
+        toolResult = formatReportForAI(result);
+        provenance = {
+          source: `"${report.name}" report from ${report.tableName}`,
+          timestamp: new Date().toISOString(),
+          recordCount: result.metadata?.totalRecords || result.data?.length,
+        };
+        queryResults = result;
+      }
+      break;
+    }
+
+    case 'query_any_table': {
+      const args = toolInput as { tableName: string; action: string; limit?: number };
+      const table = await findTable(args.tableName);
+      if (!table) {
+        toolResult = { error: `Table "${args.tableName}" not found` };
+      } else {
+        if (args.action === 'count') {
+          const count = await qbClient.getRecordCount(table.id);
+          toolResult = { count, tableName: table.name };
+          provenance = {
+            source: `${table.name} table`,
+            timestamp: new Date().toISOString(),
+            recordCount: count,
+          };
+        } else {
+          const fields = await getTableFields(table.id);
+          const selectFields = fields.slice(0, 5).map(f => f.id);
+          const result = await qbClient.queryRecords(table.id, {
+            select: selectFields,
+            top: Math.min(args.limit || 10, 25),
+          });
+          
+          const fieldMap = new Map(fields.map(f => [f.id.toString(), f.label]));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const formattedRecords = result.data.map((record: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const clean: Record<string, any> = {};
+            for (const [fieldId, fieldData] of Object.entries(record)) {
+              const label = fieldMap.get(fieldId) || `Field ${fieldId}`;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const value = (fieldData as any)?.value;
+              if (value !== undefined && value !== null && value !== '') {
+                clean[label] = value;
+              }
+            }
+            return clean;
+          });
+          
+          toolResult = {
+            tableName: table.name,
+            records: formattedRecords,
+            totalCount: result.metadata.totalRecords,
+            showing: formattedRecords.length,
+          };
+          provenance = {
+            source: `${table.name} table`,
+            timestamp: new Date().toISOString(),
+            recordCount: result.metadata.totalRecords,
+          };
+          queryResults = result;
+        }
+      }
+      break;
+    }
+
+    case 'search_all_reports': {
+      const args = toolInput as { searchQuery: string };
+      const searchResults = await searchReports(args.searchQuery);
+      const allReports = await getAllReports();
+      
+      toolResult = {
+        searchQuery: args.searchQuery,
+        totalReportsInSystem: allReports.length,
+        matchCount: searchResults.length,
+        matches: searchResults.map(r => ({
+          name: r.name,
+          table: r.tableName,
+          description: r.description || '',
+        })),
+      };
+      provenance = {
+        source: `Report search: "${args.searchQuery}"`,
+        timestamp: new Date().toISOString(),
+        recordCount: searchResults.length,
+      };
+      break;
+    }
+
+    default:
+      toolResult = { error: `Unknown function: ${toolName}` };
+  }
+
+  return { result: toolResult, provenance, queryResults };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PROCESS MESSAGE - Entry point for chat
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -262,288 +502,107 @@ Just ask me anything about your program data!`,
       console.log('Could not load verified examples (db may not be ready):', error);
     }
 
-    // Create model with function calling
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3-pro-preview',
-      systemInstruction: enhancedSystemPrompt,
-      tools: [{ functionDeclarations: TOOLS }],
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingMode.AUTO,
-        },
-      },
-    });
-
-    // Build conversation history
-    const history = conversationHistory.slice(-6).map(msg => ({
-      role: msg.role === 'assistant' ? 'model' as const : 'user' as const,
-      parts: [{ text: msg.content }],
+    // Build conversation history for Claude format
+    const messages: Anthropic.MessageParam[] = conversationHistory.slice(-6).map(msg => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
     }));
 
-    const chat = model.startChat({ history });
+    // Add current user message
+    messages.push({
+      role: 'user',
+      content: userMessage,
+    });
 
-    // Send user message with retry logic
-    let result = await withRetry(() => chat.sendMessage(userMessage));
-    let response = result.response;
-    
-    // Process tool calls
+    // Track provenance and results
     let provenance: Provenance | undefined;
     let queryResults: unknown;
     let iterations = 0;
-    const maxIterations = 3;
+    const maxIterations = 5;
 
-    while (iterations < maxIterations) {
-      const functionCalls = response.functionCalls();
-      
-      if (!functionCalls || functionCalls.length === 0) {
-        break;
-      }
+    // Initial API call with retry
+    let response: Anthropic.Message = await withRetry(() =>
+      anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: enhancedSystemPrompt,
+        tools: CLAUDE_TOOLS,
+        messages,
+      })
+    );
 
-      // Execute each function call
-      const functionResponses: FunctionResponsePart[] = [];
+    // Process tool calls in a loop
+    while (response.stop_reason === 'tool_use' && iterations < maxIterations) {
+      iterations++;
 
-      for (const call of functionCalls) {
-        console.log(`Executing tool: ${call.name}`, call.args);
-        
+      // Find all tool use blocks
+      const toolUseBlocks = response.content.filter(
+        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+      );
+
+      if (toolUseBlocks.length === 0) break;
+
+      // Execute each tool and collect results
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+      for (const toolUse of toolUseBlocks) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let toolResult: any;
+          const { result, provenance: toolProvenance, queryResults: toolQueryResults } = await executeTool(
+            toolUse.name,
+            toolUse.input,
+            qbClient
+          );
+          
+          // Keep the last provenance
+          if (toolProvenance) provenance = toolProvenance;
+          if (toolQueryResults) queryResults = toolQueryResults;
 
-          switch (call.name) {
-            case 'count_records': {
-              const countResult = await executeCountRecords(
-                call.args as CountParams,
-                qbClient
-              );
-              toolResult = { count: countResult.count };
-              provenance = countResult.provenance;
-              queryResults = countResult;
-              break;
-            }
-
-            case 'list_records': {
-              const listResult = await executeListRecords(
-                call.args as ListParams,
-                qbClient
-              );
-              // Format records for AI consumption
-              toolResult = formatRecordsForAI(listResult.records, (call.args as ListParams).table);
-              provenance = listResult.provenance;
-              queryResults = listResult;
-              break;
-            }
-
-            case 'run_report': {
-              const reportResult = await executeRunReport(
-                call.args as ReportParams,
-                qbClient
-              );
-              toolResult = formatReportForAI(reportResult.data);
-              provenance = reportResult.provenance;
-              queryResults = reportResult;
-              break;
-            }
-
-            case 'get_help': {
-              toolResult = executeGetHelp(call.args as { topic?: string });
-              break;
-            }
-
-            // ─────────────────────────────────────────────────────────────────
-            // EXPLORATION TOOLS - Full access to all tables and 900+ reports
-            // ─────────────────────────────────────────────────────────────────
-            case 'explore_all_tables': {
-              const tables = await getAllTables();
-              const reports = await getAllReports();
-              toolResult = {
-                tableCount: tables.length,
-                reportCount: reports.length,
-                tables: tables.map(t => ({ name: t.name, description: t.description || '' })),
-                summary: `You have access to ${tables.length} tables and ${reports.length} reports.`,
-              };
-              provenance = {
-                source: 'QuickBase App Schema',
-                timestamp: new Date().toISOString(),
-                recordCount: tables.length,
-              };
-              break;
-            }
-
-            case 'explore_table_fields': {
-              const args = call.args as { tableName: string };
-              const table = await findTable(args.tableName);
-              if (!table) {
-                toolResult = { error: `Table "${args.tableName}" not found` };
-              } else {
-                const fields = await getTableFields(table.id);
-                toolResult = {
-                  tableName: table.name,
-                  fieldCount: fields.length,
-                  fields: fields.slice(0, 50).map(f => ({ name: f.label, type: f.type })),
-                };
-                provenance = {
-                  source: `${table.name} table structure`,
-                  timestamp: new Date().toISOString(),
-                  recordCount: fields.length,
-                };
-              }
-              break;
-            }
-
-            case 'list_table_reports': {
-              const args = call.args as { tableName: string };
-              const reports = await getReportsForTable(args.tableName);
-              const table = await findTable(args.tableName);
-              toolResult = {
-                tableName: table?.name || args.tableName,
-                reportCount: reports.length,
-                reports: reports.map(r => ({ name: r.name, description: r.description || '' })),
-              };
-              provenance = {
-                source: `Reports for ${table?.name || args.tableName}`,
-                timestamp: new Date().toISOString(),
-                recordCount: reports.length,
-              };
-              break;
-            }
-
-            case 'run_dynamic_report': {
-              const args = call.args as { tableName: string; reportName: string };
-              // Use cached report lookup for fast matching
-              const report = await findReport(args.reportName, args.tableName);
-              if (!report) {
-                // Try searching if exact match fails
-                const searchResults = await searchReports(args.reportName);
-                if (searchResults.length > 0) {
-                  toolResult = {
-                    error: `Report "${args.reportName}" not found. Did you mean one of these?`,
-                    suggestions: searchResults.slice(0, 5).map(r => `${r.name} (in ${r.tableName})`),
-                  };
-                } else {
-                  toolResult = { error: `Report "${args.reportName}" not found` };
-                }
-              } else {
-                const result = await qbClient.runReport(report.tableId, report.id);
-                toolResult = formatReportForAI(result);
-                provenance = {
-                  source: `"${report.name}" report from ${report.tableName}`,
-                  timestamp: new Date().toISOString(),
-                  recordCount: result.metadata?.totalRecords || result.data?.length,
-                };
-                queryResults = result;
-              }
-              break;
-            }
-
-            case 'query_any_table': {
-              const args = call.args as { tableName: string; action: string; limit?: number };
-              const table = await findTable(args.tableName);
-              if (!table) {
-                toolResult = { error: `Table "${args.tableName}" not found` };
-              } else {
-                if (args.action === 'count') {
-                  const count = await qbClient.getRecordCount(table.id);
-                  toolResult = { count, tableName: table.name };
-                  provenance = {
-                    source: `${table.name} table`,
-                    timestamp: new Date().toISOString(),
-                    recordCount: count,
-                  };
-                } else {
-                  // List action
-                  const fields = await getTableFields(table.id);
-                  const selectFields = fields.slice(0, 5).map(f => f.id);
-                  const result = await qbClient.queryRecords(table.id, {
-                    select: selectFields,
-                    top: Math.min(args.limit || 10, 25),
-                  });
-                  
-                  // Format with field labels
-                  const fieldMap = new Map(fields.map(f => [f.id.toString(), f.label]));
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const formattedRecords = result.data.map((record: any) => {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const clean: Record<string, any> = {};
-                    for (const [fieldId, fieldData] of Object.entries(record)) {
-                      const label = fieldMap.get(fieldId) || `Field ${fieldId}`;
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const value = (fieldData as any)?.value;
-                      if (value !== undefined && value !== null && value !== '') {
-                        clean[label] = value;
-                      }
-                    }
-                    return clean;
-                  });
-                  
-                  toolResult = {
-                    tableName: table.name,
-                    records: formattedRecords,
-                    totalCount: result.metadata.totalRecords,
-                    showing: formattedRecords.length,
-                  };
-                  provenance = {
-                    source: `${table.name} table`,
-                    timestamp: new Date().toISOString(),
-                    recordCount: result.metadata.totalRecords,
-                  };
-                  queryResults = result;
-                }
-              }
-              break;
-            }
-
-            case 'search_all_reports': {
-              const args = call.args as { searchQuery: string };
-              const searchResults = await searchReports(args.searchQuery);
-              const allReports = await getAllReports();
-              
-              toolResult = {
-                searchQuery: args.searchQuery,
-                totalReportsInSystem: allReports.length,
-                matchCount: searchResults.length,
-                matches: searchResults.map(r => ({
-                  name: r.name,
-                  table: r.tableName,
-                  description: r.description || '',
-                })),
-              };
-              provenance = {
-                source: `Report search: "${args.searchQuery}"`,
-                timestamp: new Date().toISOString(),
-                recordCount: searchResults.length,
-              };
-              break;
-            }
-
-            default:
-              toolResult = { error: `Unknown function: ${call.name}` };
-          }
-
-          functionResponses.push({
-            functionResponse: {
-              name: call.name,
-              response: toolResult,
-            },
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
           });
         } catch (error) {
-          console.error(`Tool execution error for ${call.name}:`, error);
-          functionResponses.push({
-            functionResponse: {
-              name: call.name,
-              response: { error: error instanceof Error ? error.message : 'Tool execution failed' },
-            },
+          console.error(`Tool execution error for ${toolUse.name}:`, error);
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: JSON.stringify({ error: error instanceof Error ? error.message : 'Tool execution failed' }),
+            is_error: true,
           });
         }
       }
 
-      // Send function results back to AI with retry logic
-      result = await withRetry(() => chat.sendMessage(functionResponses as unknown as string));
-      response = result.response;
-      iterations++;
+      // Add assistant response and tool results to messages
+      messages.push({
+        role: 'assistant',
+        content: response.content,
+      });
+
+      messages.push({
+        role: 'user',
+        content: toolResults,
+      });
+
+      // Continue conversation with retry
+      response = await withRetry(() =>
+        anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4096,
+          system: enhancedSystemPrompt,
+          tools: CLAUDE_TOOLS,
+          messages,
+        })
+      );
     }
 
-    // Get final text response
-    let responseText = response.text();
+    // Extract final text response
+    let responseText = '';
+    for (const block of response.content as Anthropic.ContentBlock[]) {
+      if (block.type === 'text') {
+        responseText += (block as Anthropic.TextBlock).text;
+      }
+    }
 
     // Add provenance footer if we have query results
     if (provenance) {
@@ -567,7 +626,7 @@ Just ask me anything about your program data!`,
       };
     }
     
-    if (errorMessage.includes('rate') || errorMessage.includes('quota')) {
+    if (errorMessage.includes('rate') || errorMessage.includes('overloaded') || errorMessage.includes('429')) {
       return {
         response: "I'm getting a lot of requests right now. Please wait a moment and try again.",
       };
@@ -661,4 +720,3 @@ function formatProvenance(provenance: Provenance): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export { processMessage as default };
-

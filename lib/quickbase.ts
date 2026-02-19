@@ -183,7 +183,7 @@ export class QuickBaseClient {
    */
   async runReport(tableId: string, reportId: string, skip = 0, top = 100): Promise<QueryResult> {
     try {
-      const response = await this.client.post(`/reports/${reportId}/run`, {
+      const response = await this.client.post(`/reports/${reportId}/run?tableId=${tableId}`, {
         skip,
         top,
       });

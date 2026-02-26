@@ -18,11 +18,7 @@
     "training:import-csv": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/import-training-csv.ts",
     "training:stats": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts stats",
     "training:review": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/manage-training.ts review",
-    "metrics:chat": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/metrics-chat-quality.ts",
-    "pinecone:test": "npx tsx scripts/test-pinecone.ts",
-    "pinecone:sync": "npx tsx scripts/sync-pinecone.ts",
-    "pinecone:stats": "npx tsx scripts/sync-pinecone.ts --stats",
-    "pinecone:reset": "npx tsx scripts/sync-pinecone.ts --reset"
+    "metrics:chat": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/metrics-chat-quality.ts"
   },
   "prisma": {
     "seed": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
@@ -32,7 +28,6 @@
     "@azure/identity": "^4.5.0",
     "@google/generative-ai": "^0.21.0",
     "@next-auth/prisma-adapter": "^1.0.7",
-    "@pinecone-database/pinecone": "^7.1.0",
     "@prisma/client": "^6.19.2",
     "axios": "^1.7.7",
     "class-variance-authority": "^0.7.1",

@@ -168,20 +168,25 @@ async function findSimilarExamplesKeyword(
 
 /**
  * Find similar examples based on question text
- * Uses Pinecone semantic search with keyword fallback
+ * Uses keyword matching (fast and effective for <500 examples)
+ * Pinecone semantic search available for larger datasets
  */
 export async function findSimilarExamples(
   question: string,
-  limit: number = 5
+  limit: number = 5,
+  useSemanticSearch: boolean = false
 ): Promise<VerifiedExample[]> {
-  try {
-    const usePinecone = await checkPineconeAvailable();
-    
-    if (usePinecone) {
-      return await findSimilarExamplesPinecone(question, limit);
+  // For small datasets (<500 examples), keyword matching is fast and effective
+  // Only use Pinecone semantic search when explicitly requested and available
+  if (useSemanticSearch) {
+    try {
+      const usePinecone = await checkPineconeAvailable();
+      if (usePinecone) {
+        return await findSimilarExamplesPinecone(question, limit);
+      }
+    } catch (error) {
+      console.error('Pinecone search failed, falling back to keyword matching:', error);
     }
-  } catch (error) {
-    console.error('Pinecone search failed, falling back to keyword matching:', error);
   }
   
   return findSimilarExamplesKeyword(question, limit);

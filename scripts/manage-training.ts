@@ -26,15 +26,31 @@ async function seed() {
     process.exit(1);
   }
   
-  const content = fs.readFileSync(jsonlPath, 'utf-8');
+  let content = fs.readFileSync(jsonlPath, 'utf-8');
+  
+  // Remove BOM if present and normalize line endings
+  if (content.charCodeAt(0) === 0xFEFF) {
+    content = content.slice(1);
+  }
+  content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
   const lines = content.split('\n').filter(line => line.trim());
   
   let added = 0;
   let skipped = 0;
   
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
     try {
       const data = JSON.parse(line);
+      
+      // Validate required fields
+      if (!data.question || !data.expectedAnswer) {
+        console.warn(`⚠️  Line ${i + 1}: Missing required fields (question/expectedAnswer)`);
+        continue;
+      }
       
       // Check if exists
       const existing = await prisma.verifiedQA.findFirst({
@@ -62,7 +78,9 @@ async function seed() {
       });
       added++;
     } catch (err) {
-      console.warn('⚠️  Skipping malformed line');
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.warn(`⚠️  Line ${i + 1}: ${errorMsg}`);
+      console.warn(`    Preview: ${line.substring(0, 80)}...`);
     }
   }
   

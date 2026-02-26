@@ -2,11 +2,23 @@ import { prisma } from './db';
 import * as fs from 'fs';
 import * as path from 'path';
 import { TOOLS } from './tools';
+import {
+  querySimilarQA,
+  upsertQAExample,
+  batchUpsertQAExamples,
+  isPineconeAvailable,
+  deleteQAExample,
+  getIndexStats,
+  QAMetadataInput,
+} from './pinecone';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRAINING SERVICE
 // Manages verified Q&A examples for improving AI responses
+// Uses Pinecone for semantic search with keyword fallback
 // ═══════════════════════════════════════════════════════════════════════════════
+
+let pineconeEnabled: boolean | null = null;
 
 export interface VerifiedExample {
   id: string;
@@ -73,34 +85,64 @@ export async function loadVerifiedExamples(): Promise<VerifiedExample[]> {
 }
 
 /**
- * Find similar examples based on question text
+ * Check if Pinecone is available (cached result)
  */
-export async function findSimilarExamples(
+async function checkPineconeAvailable(): Promise<boolean> {
+  if (pineconeEnabled === null) {
+    pineconeEnabled = await isPineconeAvailable();
+    console.log(`Pinecone semantic search: ${pineconeEnabled ? 'enabled' : 'disabled (using keyword fallback)'}`);
+  }
+  return pineconeEnabled;
+}
+
+/**
+ * Find similar examples using Pinecone semantic search
+ */
+async function findSimilarExamplesPinecone(
+  question: string,
+  limit: number = 5
+): Promise<VerifiedExample[]> {
+  const results = await querySimilarQA(question, limit, { verified: true });
+  
+  return results.map(result => ({
+    id: result.id,
+    question: result.metadata.question,
+    expectedAnswer: result.metadata.expectedAnswer,
+    expectedTool: result.metadata.expectedTool,
+    expectedParams: result.metadata.expectedParams 
+      ? JSON.parse(result.metadata.expectedParams) 
+      : undefined,
+    category: result.metadata.category,
+    tags: result.metadata.tags || [],
+    verified: result.metadata.verified,
+  }));
+}
+
+/**
+ * Find similar examples using keyword matching (fallback)
+ */
+async function findSimilarExamplesKeyword(
   question: string,
   limit: number = 5
 ): Promise<VerifiedExample[]> {
   const examples = await loadVerifiedExamples();
   const lowerQuestion = question.toLowerCase();
   
-  // Score each example based on word overlap and category relevance
   const scored = examples.map(ex => {
     const exLower = ex.question.toLowerCase();
     let score = 0;
     
-    // Word overlap scoring
     const questionWords = lowerQuestion.split(/\s+/).filter(w => w.length > 2);
     
     for (const word of questionWords) {
       if (exLower.includes(word)) {
         score += 2;
       }
-      // Check tags too
       if (ex.tags.some(tag => tag.toLowerCase().includes(word))) {
         score += 1;
       }
     }
     
-    // Bonus for similar structure
     if (lowerQuestion.startsWith('how many') && exLower.startsWith('how many')) {
       score += 3;
     }
@@ -117,12 +159,32 @@ export async function findSimilarExamples(
     return { example: ex, score };
   });
   
-  // Sort by score and return top matches
   return scored
     .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map(s => s.example);
+}
+
+/**
+ * Find similar examples based on question text
+ * Uses Pinecone semantic search with keyword fallback
+ */
+export async function findSimilarExamples(
+  question: string,
+  limit: number = 5
+): Promise<VerifiedExample[]> {
+  try {
+    const usePinecone = await checkPineconeAvailable();
+    
+    if (usePinecone) {
+      return await findSimilarExamplesPinecone(question, limit);
+    }
+  } catch (error) {
+    console.error('Pinecone search failed, falling back to keyword matching:', error);
+  }
+  
+  return findSimilarExamplesKeyword(question, limit);
 }
 
 function normalizeDateRangeValue(value: unknown): unknown {
@@ -341,6 +403,87 @@ export async function getCategoryCounts(): Promise<Record<string, number>> {
 }
 
 /**
+ * Sync all verified examples from database to Pinecone
+ */
+export async function syncToPinecone(): Promise<{ synced: number; errors: number }> {
+  const usePinecone = await checkPineconeAvailable();
+  if (!usePinecone) {
+    console.log('Pinecone not available, skipping sync');
+    return { synced: 0, errors: 0 };
+  }
+
+  const examples = await loadVerifiedExamples();
+  let synced = 0;
+  let errors = 0;
+
+  const toUpsert = examples.map(ex => ({
+    id: ex.id,
+    question: ex.question,
+    metadata: {
+      expectedAnswer: ex.expectedAnswer,
+      expectedTool: ex.expectedTool,
+      expectedParams: ex.expectedParams ? JSON.stringify(ex.expectedParams) : undefined,
+      category: ex.category,
+      tags: ex.tags,
+      verified: ex.verified,
+    } as QAMetadataInput,
+  }));
+
+  try {
+    synced = await batchUpsertQAExamples(toUpsert);
+  } catch (error) {
+    console.error('Error during batch sync to Pinecone:', error);
+    errors = toUpsert.length;
+  }
+
+  console.log(`Pinecone sync complete: ${synced} synced, ${errors} errors`);
+  return { synced, errors };
+}
+
+/**
+ * Get Pinecone index statistics
+ */
+export async function getPineconeStats(): Promise<{ available: boolean; totalVectors: number }> {
+  const available = await checkPineconeAvailable();
+  if (!available) {
+    return { available: false, totalVectors: 0 };
+  }
+  
+  const stats = await getIndexStats();
+  return { available: true, totalVectors: stats.totalVectors };
+}
+
+/**
+ * Upsert a single example to Pinecone (helper)
+ */
+async function upsertToPineconeIfAvailable(
+  id: string,
+  question: string,
+  expectedAnswer: string,
+  expectedTool: string | undefined,
+  expectedParams: Record<string, unknown> | undefined,
+  category: string,
+  tags: string[],
+  verified: boolean
+): Promise<void> {
+  try {
+    const usePinecone = await checkPineconeAvailable();
+    if (usePinecone) {
+      await upsertQAExample(id, question, {
+        expectedAnswer,
+        expectedTool,
+        expectedParams: expectedParams ? JSON.stringify(expectedParams) : undefined,
+        category,
+        tags,
+        verified,
+      });
+    }
+  } catch (error) {
+    console.error('Failed to upsert to Pinecone (non-fatal):', error);
+  }
+}
+
+/**
  * Seed verified examples from JSONL file
  */
 export async function seedFromJSONL(filePath: string): Promise<number> {
@@ -350,17 +493,22 @@ export async function seedFromJSONL(filePath: string): Promise<number> {
     const lines = content.split('\n').filter(line => line.trim());
     
     let count = 0;
+    const newExamples: Array<{
+      id: string;
+      question: string;
+      metadata: QAMetadataInput;
+    }> = [];
+
     for (const line of lines) {
       try {
         const data = JSON.parse(line);
         
-        // Check if example already exists (by question)
         const existing = await prisma.verifiedQA.findFirst({
           where: { question: data.question },
         });
         
         if (!existing) {
-          await prisma.verifiedQA.create({
+          const created = await prisma.verifiedQA.create({
             data: {
               question: data.question,
               expectedAnswer: data.expectedAnswer,
@@ -374,6 +522,22 @@ export async function seedFromJSONL(filePath: string): Promise<number> {
               verifiedAt: data.verified ? new Date() : null,
             },
           });
+          
+          if (data.verified) {
+            newExamples.push({
+              id: created.id,
+              question: data.question,
+              metadata: {
+                expectedAnswer: data.expectedAnswer,
+                expectedTool: data.expectedTool,
+                expectedParams: data.expectedParams ? JSON.stringify(data.expectedParams) : undefined,
+                category: data.category || 'general',
+                tags: data.tags || [],
+                verified: true,
+              },
+            });
+          }
+          
           count++;
         }
       } catch (parseError) {
@@ -381,7 +545,19 @@ export async function seedFromJSONL(filePath: string): Promise<number> {
       }
     }
     
-    // Invalidate cache
+    // Sync new verified examples to Pinecone
+    if (newExamples.length > 0) {
+      const usePinecone = await checkPineconeAvailable();
+      if (usePinecone) {
+        try {
+          await batchUpsertQAExamples(newExamples);
+          console.log(`Synced ${newExamples.length} new examples to Pinecone`);
+        } catch (error) {
+          console.error('Failed to sync to Pinecone (non-fatal):', error);
+        }
+      }
+    }
+    
     cacheLastUpdated = null;
     
     console.log(`Seeded ${count} new verified Q&A examples from ${filePath}`);
@@ -424,7 +600,6 @@ export async function convertFeedbackToExample(feedbackId: string): Promise<stri
       return null;
     }
     
-    // Create new verified example
     const example = await prisma.verifiedQA.create({
       data: {
         question: feedback.question,
@@ -439,7 +614,18 @@ export async function convertFeedbackToExample(feedbackId: string): Promise<stri
       },
     });
     
-    // Update feedback status
+    // Sync to Pinecone
+    await upsertToPineconeIfAvailable(
+      example.id,
+      feedback.question,
+      feedback.correctedAnswer,
+      feedback.toolCalled || undefined,
+      feedback.toolParams ? JSON.parse(feedback.toolParams) : undefined,
+      'user-corrected',
+      [],
+      true
+    );
+    
     await prisma.responseFeedback.update({
       where: { id: feedbackId },
       data: {
@@ -448,12 +634,33 @@ export async function convertFeedbackToExample(feedbackId: string): Promise<stri
       },
     });
     
-    // Invalidate cache
     cacheLastUpdated = null;
     
     return example.id;
   } catch (error) {
     console.error('Error converting feedback to example:', error);
     return null;
+  }
+}
+
+/**
+ * Delete a verified example (from both DB and Pinecone)
+ */
+export async function deleteVerifiedExample(exampleId: string): Promise<boolean> {
+  try {
+    await prisma.verifiedQA.delete({
+      where: { id: exampleId },
+    });
+    
+    const usePinecone = await checkPineconeAvailable();
+    if (usePinecone) {
+      await deleteQAExample(exampleId);
+    }
+    
+    cacheLastUpdated = null;
+    return true;
+  } catch (error) {
+    console.error('Error deleting verified example:', error);
+    return false;
   }
 }

@@ -1,27 +1,29 @@
 question,expected_answer,expected_tool,expected_params_json,category,tags_csv,verified,notes
-"How many families are enrolled?","There are X families currently enrolled in the program.","count_records","{""table"":""families"",""status"":""enrolled""}","enrollment","families,count,enrolled",true,"Count enrolled families from Family table"
-"How many children are enrolled?","There are X children currently enrolled.","count_records","{""table"":""child_status"",""status"":""enrolled""}","enrollment","children,count,enrolled",true,"Use child_status table (Horizons Child Status) NOT clients"
-"How many kids enrolled last week?","X children enrolled last week.","count_records","{""table"":""child_status"",""status"":""enrolled"",""dateRange"":""last_week""}","enrollment","children,count,last_week",true,"Child enrollment with date filter"
-"How many children enrolled this month?","X children enrolled this month.","count_records","{""table"":""child_status"",""status"":""enrolled"",""dateRange"":""this_month""}","enrollment","children,count,this_month",true,"Monthly child enrollment"
-"Show me enrolled children","Here are the currently enrolled children: [list]","list_records","{""table"":""child_status"",""status"":""enrolled"",""limit"":10}","enrollment","children,list,enrolled",true,"List enrolled children from child_status"
-"How many families are on the waitlist?","There are X families on the waitlist.","count_records","{""table"":""families"",""status"":""waitlist""}","enrollment","families,count,waitlist",true,"Waitlist families"
-"How many staff members do we have?","There are X staff members at Horizons.","count_records","{""table"":""staff""}","staff","staff,count",true,"Staff count from Horizons Staff table"
-"List staff members","Here are the Horizons staff members: [list]","list_records","{""table"":""staff"",""limit"":20}","staff","staff,list",true,"List staff"
-"How many classes are there?","There are X classes.","count_records","{""table"":""classes""}","classes","classes,count",true,"Class count"
-"How many active classes?","There are X active classes.","count_records","{""table"":""classes"",""status"":""active""}","classes","classes,count,active",true,"Active classes only"
-"How many children attended today?","X children attended today.","count_records","{""table"":""attendance"",""dateRange"":""today""}","attendance","attendance,count,today",true,"Daily attendance"
-"How many children attended this week?","X children attended this week.","count_records","{""table"":""attendance"",""dateRange"":""this_week""}","attendance","attendance,count,this_week",true,"Weekly attendance"
-"How many class enrollments are active?","There are X active class enrollments.","count_records","{""table"":""class_enrollments"",""status"":""currently_enrolled""}","enrollment","class_enrollments,count,active",true,"Currently enrolled in classes"
-"How many ICPs do we have?","There are X Individual Child Plans.","count_records","{""table"":""icp""}","icp","icp,count",true,"ICP count"
-"How many case notes this month?","X case notes were created this month.","count_records","{""table"":""case_notes"",""dateRange"":""this_month""}","case_notes","case_notes,count,this_month",true,"Monthly case notes"
-"How many referrals?","We have X admissions referrals.","count_records","{""table"":""referrals""}","referrals","referrals,count",true,"Referral count"
-"Show me expiring authorizations","Here are the authorizations expiring soon: [list]","run_report","{""report"":""expiring_authorizations""}","reports","authorizations,expiring,report",true,"Pre-configured report"
-"Show me current enrollment","Here is the current enrollment summary: [data]","run_report","{""report"":""current_enrollment""}","reports","enrollment,summary,report",true,"Current enrollment report"
-"Show me enrollment by coordinator","Here is enrollment grouped by Family Coordinator: [data]","run_report","{""report"":""enrollment_by_coordinator""}","reports","enrollment,coordinator,report",true,"Enrollment by FCS report"
-"What tables are available?","Here are all the tables in the system: [list of 80+ tables]","explore_all_tables","{}","exploration","tables,schema,explore",true,"Schema exploration"
-"What reports exist for Family?","Here are the reports for the Family table: [list]","list_table_reports","{""tableName"":""Family""}","reports","reports,family,discovery",true,"Report discovery"
-"What fields does Horizons Child Status have?","Here are the fields in Horizons Child Status: [list]","explore_table_fields","{""tableName"":""Horizons Child Status""}","exploration","fields,child_status,schema",true,"Field exploration"
-"Search for attendance reports","Here are reports matching 'attendance': [list]","search_all_reports","{""searchQuery"":""attendance""}","reports","reports,search,attendance",true,"Report search"
-"Run the List All report from Family","Here are all Family records: [data]","run_dynamic_report","{""tableName"":""Family"",""reportName"":""List All""}","reports","reports,run,list_all",true,"Run List All report"
-"What can you help me with?","I can help with enrollment data, attendance, staff info, reports, and more!","get_help","{""topic"":""general""}","help","help,capabilities",true,"Help request"
-
+How many families are enrolled?,There are X families currently enrolled in the program.,count_records,"{""table"":""families"",""status"":""enrolled""}",enrollment,"families,count,enrolled",TRUE,Count enrolled families from Family table
+How many children are enrolled this month?,There are X children currently enrolled.,count_records,"{""table"":""child_status"",""status"":""enrolled"",""status_start_date"":""current_month""}",enrollment,"children,count,enrolled",TRUE,Use child_status table (Horizons Child Status) NOT clients and filter status=enrolled and status start date = current month
+How many children are enrolled?,There are X children currently enrolled.,count_records,"{""table"":""child_status"",""status"":""enrolled""}",enrollment,"children,count,enrolled",TRUE,Use child_status table (Horizons Child Status) NOT clients and filter status=enrolled
+How many kids enrolled last week?,X children enrolled last week.,count_records,"{""table"":""child_status"",""status"":""enrolled"",""dateRange"":""last_week""}",enrollment,"children,count,last_week",TRUE,Use child_status table (Horizons Child Status) NOT clients and filter status=enrolled and status start date = last week
+How many children enrolled this month?,X children enrolled this month.,count_records,"{""table"":""child_status"",""status"":""enrolled"",""dateRange"":""this_month""}",enrollment,"children,count,this_month",TRUE,Monthly child enrollment
+How many kids/children are active ?,X children are active currently orcurrently enrolled as of now.,,"{""table"":""child_status"",""status"":""enrolled"",""dateRange"":""this_month""}",,,,
+Show me enrolled children,Here are the currently enrolled children: [list],list_records,"{""table"":""child_status"",""status"":""enrolled"",""limit"":10}",enrollment,"children,list,enrolled",TRUE,List enrolled children from child_status
+How many families are on the waitlist?,There are X families on the waitlist.,count_records,"{""table"":""families"",""status"":""waitlist""}",enrollment,"families,count,waitlist",TRUE,Waitlist families
+How many staff members do we have?,There are X staff members at Horizons.,count_records,"{""table"":""staff""}",staff,"staff,count",TRUE,Staff count from Horizons Staff table
+List staff members,Here are the Horizons staff members: [list],list_records,"{""table"":""staff"",""limit"":20}",staff,"staff,list",TRUE,List staff
+List current active staff members,Here are the active Horizons staff members: [list],list_records,"{""table"":""staff"", ""HHC_Status"":""Active"", ""limit"":20}",staff,"staff,list",TRUE,"List staff who have ""HHC_Status"" is Active "
+How many classes are there?,There are X classes.,count_records,"{""table"":""classes""}",classes,"classes,count",TRUE,Class count
+How many active classes?,There are X active classes.,count_records,"{""table"":""classes"",""status"":""active""}",classes,"classes,count,active",TRUE,Active classes only
+How many children attended today?,X children attended today.,count_records,"{""table"":""attendance"",""dateRange"":""today""}",attendance,"attendance,count,today",TRUE,Daily attendance
+How many children attended this week?,X children attended this week.,count_records,"{""table"":""attendance"",""dateRange"":""this_week""}",attendance,"attendance,count,this_week",TRUE,Weekly attendance
+How many class enrollments are active?,There are X active class enrollments.,count_records,"{""table"":""class_enrollments"",""status"":""currently_enrolled""}",enrollment,"class_enrollments,count,active",TRUE,Currently enrolled in classes
+How many ICPs do we have?,There are X Individual Child Plans.,count_records,"{""table"":""icp""}",icp,"icp,count",TRUE,ICP count
+How many case notes this month?,X case notes were created this month.,count_records,"{""table"":""case_notes"",""dateRange"":""this_month""}",case_notes,"case_notes,count,this_month",TRUE,Monthly case notes
+How many referrals?,We have X admissions referrals.,count_records,"{""table"":""referrals""}",referrals,"referrals,count",TRUE,Referral count
+Show me expiring authorizations,Here are the authorizations expiring soon: [list],run_report,"{""report"":""expiring_authorizations""}",reports,"authorizations,expiring,report",TRUE,Pre-configured report
+Show me current enrollment,Here is the current enrollment summary: [data],run_report,"{""report"":""current_enrollment""}",reports,"enrollment,summary,report",TRUE,Current enrollment report
+Show me enrollment by coordinator,Here is enrollment grouped by Family Coordinator: [data],run_report,"{""report"":""enrollment_by_coordinator""}",reports,"enrollment,coordinator,report",TRUE,Enrollment by FCS report
+What tables are available?,Here are all the tables in the system: [list of 80+ tables],explore_all_tables,{},exploration,"tables,schema,explore",TRUE,Schema exploration
+What reports exist for Family?,Here are the reports for the Family table: [list],list_table_reports,"{""tableName"":""Family""}",reports,"reports,family,discovery",TRUE,Report discovery
+What fields does Horizons Child Status have?,Here are the fields in Horizons Child Status: [list],explore_table_fields,"{""tableName"":""Horizons Child Status""}",exploration,"fields,child_status,schema",TRUE,Field exploration
+Search for attendance reports,Here are reports matching 'attendance': [list],search_all_reports,"{""searchQuery"":""attendance""}",reports,"reports,search,attendance",TRUE,Report search
+Run the List All report from Family,Here are all Family records: [data],run_dynamic_report,"{""tableName"":""Family"",""reportName"":""List All""}",reports,"reports,run,list_all",TRUE,Run List All report
+What can you help me with?,"I can help with enrollment data, attendance, staff info, reports, and more!",get_help,"{""topic"":""general""}",help,"help,capabilities",TRUE,Help request

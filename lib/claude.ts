@@ -179,7 +179,6 @@ async function executeCountRecords(
   params: CountParams,
   qbClient: QuickBaseClient
 ): Promise<{ count: number; provenance: Provenance }> {
-  console.log('[CLAUDE DEBUG] executeCountRecords params:', JSON.stringify(params));
   const query = buildCountQuery(params);
   
   const count = await qbClient.getRecordCount(query.tableId, query.where);

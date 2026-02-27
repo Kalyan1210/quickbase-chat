@@ -471,22 +471,19 @@ export function buildCountQuery(params: CountParams): {
     }
   }
 
-  // Add date filter
+  // Add date filter using QuickBase IR (Is during) operator
   if (params.dateRange && config.dateField) {
     const qbDateRange = DATE_RANGE_MAP[params.dateRange];
-    console.log('[TOOLS DEBUG] Date filter:', { dateRange: params.dateRange, qbDateRange, dateField: config.dateField });
     if (qbDateRange) {
       filters.push(`{'${config.dateField}'.IR.'${qbDateRange}'}`);
     }
   }
 
-  const result = {
+  return {
     tableId: config.id,
     where: filters.length > 0 ? filters.join('AND') : undefined,
     tableName: config.name,
   };
-  console.log('[TOOLS DEBUG] buildCountQuery result:', JSON.stringify(result));
-  return result;
 }
 
 /**

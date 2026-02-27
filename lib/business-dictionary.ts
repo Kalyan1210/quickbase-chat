@@ -41,10 +41,17 @@ export const TABLES: Record<string, TableDefinition> = {
   },
 
   // Clients table - children, parents, guardians
+  // Child Enrollment Status (165), Family Enrollment Status (226)
+  // Maximum Enrolled Date (175), Maximum Alumni Date (168)
   clients: {
     id: 'brxepttvj',
     name: 'Clients',
     description: 'Children, parents, siblings, and guardians of families',
+    statusField: { 
+      id: 165, 
+      values: ['Enrolled', 'Waitlist', 'Alumni', 'Archive'] 
+    },
+    dateField: { id: 175, name: 'Maximum Enrolled Date' },
     countField: { id: 3 },
   },
 
@@ -110,6 +117,7 @@ export const TABLES: Record<string, TableDefinition> = {
     id: 'bvefn87vt',
     name: 'Individual Child Plan (ICP)',
     description: 'Individual support plans for children with special needs',
+    dateField: { id: 16, name: 'ICP Date' },
     countField: { id: 3 },
   },
 

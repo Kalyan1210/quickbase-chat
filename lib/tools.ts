@@ -274,7 +274,9 @@ export const TABLE_CONFIG: Record<string, TableConfig> = {
   clients: {
     id: 'brxepttvj',
     name: 'Clients',
-    selectFields: [3], // ID
+    statusField: { id: 165, enrolledValue: 'Enrolled', waitlistValue: 'Waitlist' }, // Child Enrollment Status
+    dateField: 175, // Maximum Enrolled Date
+    selectFields: [3, 165, 226, 175, 168], // ID, Child Enrollment Status, Family Enrollment Status, Max Enrolled Date, Max Alumni Date
   },
   
   // Horizons Child Status - THIS is where enrollment status is tracked
@@ -324,7 +326,8 @@ export const TABLE_CONFIG: Record<string, TableConfig> = {
   icp: {
     id: 'bvefn87vt',
     name: 'Individual Child Plan (ICP)',
-    selectFields: [3],
+    dateField: 16, // ICP Date field for date filtering
+    selectFields: [3, 16], // ID, Date
   },
   
   // Family Case Notes

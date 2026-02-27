@@ -382,16 +382,17 @@ export const REPORT_CONFIG: Record<string, { tableId: string; reportId: string; 
   },
 };
 
-// Date range mapping to QuickBase syntax
+// Date range mapping to QuickBase API syntax
+// QuickBase uses abbreviated forms: wk, mon, y (not full words)
 export const DATE_RANGE_MAP: Record<string, string> = {
   today: 'today',
   yesterday: 'yesterday',
-  this_week: 'this week',
-  last_week: 'last week',
-  this_month: 'this month',
-  last_month: 'last month',
+  this_week: 'this wk',
+  last_week: 'last wk',
+  this_month: 'this mon',
+  last_month: 'last mon',
   last_30_days: 'last 30 d',
-  this_year: 'this year',
+  this_year: 'this y',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

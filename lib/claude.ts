@@ -572,7 +572,7 @@ Just ask me anything about your program data!`,
     // Initial API call with retry
     let response: Anthropic.Message = await withRetry(() =>
       anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-3-haiku-20240307',
         max_tokens: 4096,
         system: enhancedSystemPrompt,
         tools: CLAUDE_TOOLS,
@@ -639,7 +639,7 @@ Just ask me anything about your program data!`,
       // Continue conversation with retry
       response = await withRetry(() =>
         anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-3-haiku-20240307',
           max_tokens: 4096,
           system: enhancedSystemPrompt,
           tools: CLAUDE_TOOLS,

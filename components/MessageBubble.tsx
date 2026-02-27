@@ -3,10 +3,39 @@
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { User, Sparkles, Copy, Check } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { formatTime } from '@/lib/utils';
 import type { Message } from './ChatLayout';
 import { FeedbackButtons } from './FeedbackButtons';
+
+/**
+ * Fix malformed markdown tables that are on a single line
+ */
+function fixMarkdownTables(text: string): string {
+  // Look for patterns like: | Col | Col | |---| | Val | Val |
+  // These happen when AI generates tables without proper newlines
+  
+  // First, try to fix tables where separator is immediately after headers
+  let fixed = text.replace(
+    /(\|[^\n|]+(?:\|[^\n|]+)+\|)\s*(\|[-:]+(?:\|[-:]+)+\|)/g,
+    '$1\n$2'
+  );
+  
+  // Then fix rows that follow the separator
+  fixed = fixed.replace(
+    /(\|[-:]+(?:\|[-:]+)+\|)\s*(\|[^\n]+)/g,
+    (match, sep, firstRow) => {
+      // Split remaining content by pattern that looks like row boundaries
+      const rows = firstRow.split(/\|\s*(?=\|)/).filter((r: string) => r.trim());
+      if (rows.length > 1) {
+        return sep + '\n' + rows.map((r: string) => r.trim()).join('\n');
+      }
+      return sep + '\n' + firstRow.trim();
+    }
+  );
+  
+  return fixed;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MESSAGE BUBBLE COMPONENT
@@ -22,6 +51,12 @@ interface MessageBubbleProps {
 export function MessageBubble({ message, isLast, previousUserMessage }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
+  
+  // Fix any malformed markdown tables in the content
+  const processedContent = useMemo(() => {
+    if (isUser) return message.content;
+    return fixMarkdownTables(message.content);
+  }, [message.content, isUser]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -122,7 +157,7 @@ export function MessageBubble({ message, isLast, previousUserMessage }: MessageB
                   ),
                 }}
               >
-                {message.content}
+                {processedContent}
               </ReactMarkdown>
               
               {/* Feedback Buttons - Only show for assistant messages */}

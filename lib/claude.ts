@@ -794,8 +794,36 @@ function formatProvenance(provenance: Provenance): string {
   return `\n\n*Source: ${provenance.source}*`;
 }
 
+/**
+ * Fix malformed markdown tables that are on a single line
+ * Converts: | Col1 | Col2 | |---| | val1 | val2 |
+ * To proper multi-line format
+ */
+function fixMarkdownTables(text: string): string {
+  // Pattern to find inline tables: | header | header | |---| | data | data |
+  // This regex finds pipe-separated content that looks like a table
+  const inlineTablePattern = /(\|[^|]+\|(?:[^|]+\|)+)\s*(\|[-:]+\|(?:[-:]+\|)+)\s*(\|[^|]+\|(?:[^|]*\|)*)/g;
+  
+  return text.replace(inlineTablePattern, (match, header, separator, body) => {
+    // Split the body into rows
+    const bodyRows = body.trim().split(/\|\s*\|/).filter((r: string) => r.trim());
+    
+    // If we can parse it, format properly
+    if (bodyRows.length > 0) {
+      const formattedBody = bodyRows.map((row: string) => {
+        const cells = row.split('|').filter((c: string) => c.trim());
+        return '| ' + cells.join(' | ') + ' |';
+      }).join('\n');
+      
+      return `${header.trim()}\n${separator.trim()}\n${formattedBody}`;
+    }
+    
+    return match; // Return original if we can't parse
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // LEGACY EXPORT - Keep backward compatibility
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { processMessage as default };
+export { processMessage as default, fixMarkdownTables };

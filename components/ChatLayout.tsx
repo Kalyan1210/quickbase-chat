@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { ChatInterface } from './ChatInterface';
 import { Header } from './Header';
+import { ArtifactsPanel, Artifact } from './ArtifactsPanel';
 import { Menu, X } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -15,6 +16,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   createdAt: Date;
+  artifacts?: Artifact[];
 }
 
 export interface Conversation {
@@ -47,6 +49,8 @@ export function ChatLayout({ user }: ChatLayoutProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [isArtifactsPanelOpen, setIsArtifactsPanelOpen] = useState(false);
 
   // Check for mobile viewport
   useEffect(() => {
@@ -166,8 +170,15 @@ export function ChatLayout({ user }: ChatLayoutProps) {
         role: 'assistant',
         content: data.message.content,
         createdAt: new Date(data.message.createdAt),
+        artifacts: data.artifacts,
       };
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Show artifacts panel if there are artifacts
+      if (data.artifacts && data.artifacts.length > 0) {
+        setArtifacts(data.artifacts);
+        setIsArtifactsPanelOpen(true);
+      }
 
       // Update conversation ID if new conversation was created
       if (!currentConversationId && data.conversationId) {
@@ -231,6 +242,13 @@ export function ChatLayout({ user }: ChatLayoutProps) {
             onSendMessage={handleSendMessage}
           />
         </div>
+
+        {/* Artifacts Panel */}
+        <ArtifactsPanel
+          artifacts={artifacts}
+          isOpen={isArtifactsPanelOpen}
+          onClose={() => setIsArtifactsPanelOpen(false)}
+        />
       </div>
     </div>
   );

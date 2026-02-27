@@ -259,7 +259,7 @@ export const QUERY_MAPPINGS: QueryMapping[] = [
     patterns: ['attendance this week', 'this week attendance'],
     table: 'attendance',
     action: 'count',
-    filter: "{'6'.EX.'Attended'}AND{'10'.IR.'this week'}",
+    filter: "{'6'.EX.'Attended'}AND{'10'.IR.'this wk'}",
     description: 'Attendance records for this week',
   },
 
@@ -299,17 +299,19 @@ export const QUERY_MAPPINGS: QueryMapping[] = [
 // DATE RANGES - Standard date range interpretations
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// QuickBase API requires abbreviated date range values
+// See: https://help.quickbase.com/docs/understanding-relative-date-ranges
 export const DATE_RANGES: Record<string, string> = {
   'today': 'today',
   'yesterday': 'yesterday',
-  'this week': 'this week',
-  'last week': 'last week',
-  'this month': 'this month',
-  'last month': 'last month',
+  'this week': 'this wk',      // API requires 'wk' not 'week'
+  'last week': 'last wk',
+  'this month': 'this mon',    // API requires 'mon' not 'month'
+  'last month': 'last mon',
   'last 30 days': 'last 30 d',
   'last 90 days': 'last 90 d',
-  'this year': 'this year',
-  'last year': 'last year',
+  'this year': 'this y',       // API requires 'y' not 'year'
+  'last year': 'last y',
   'this fiscal year': 'this fy',
   'last fiscal year': 'last fy',
 };

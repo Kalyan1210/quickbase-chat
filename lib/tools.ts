@@ -54,16 +54,26 @@ export const TOOLS: FunctionDeclaration[] = [
         },
         dateRange: {
           type: SchemaType.STRING,
-          description: 'Optional date range filter',
+          description: 'Optional date range filter for when records were created/modified',
           enum: [
             'today',
             'yesterday',
+            'tomorrow',
             'this_week',
             'last_week',
+            'next_week',
             'this_month',
             'last_month',
+            'next_month',
+            'last_7_days',
             'last_30_days',
+            'next_7_days',
+            'this_quarter',
+            'last_quarter',
             'this_year',
+            'last_year',
+            'this_fiscal_year',
+            'last_fiscal_year',
           ],
         },
       },
@@ -117,7 +127,15 @@ Tables available (aligned with business dictionary):
         dateRange: {
           type: SchemaType.STRING,
           description: 'Optional date range filter for when records were created/enrolled',
-          enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'last_30_days', 'this_year'],
+          enum: [
+            'today', 'yesterday', 'tomorrow',
+            'this_week', 'last_week', 'next_week',
+            'this_month', 'last_month', 'next_month',
+            'last_7_days', 'last_30_days', 'next_7_days',
+            'this_quarter', 'last_quarter',
+            'this_year', 'last_year',
+            'this_fiscal_year', 'last_fiscal_year',
+          ],
         },
         limit: {
           type: SchemaType.NUMBER,
@@ -383,16 +401,27 @@ export const REPORT_CONFIG: Record<string, { tableId: string; reportId: string; 
 };
 
 // Date range mapping to QuickBase API syntax
-// QuickBase uses abbreviated forms: wk, mon, y (not full words)
+// QuickBase uses abbreviated forms: wk, mon, y, q, fy (not full words)
+// See: https://help.quickbase.com/docs/understanding-relative-date-ranges
 export const DATE_RANGE_MAP: Record<string, string> = {
   today: 'today',
   yesterday: 'yesterday',
+  tomorrow: 'tomorrow',
   this_week: 'this wk',
   last_week: 'last wk',
+  next_week: 'next wk',
   this_month: 'this mon',
   last_month: 'last mon',
+  next_month: 'next mon',
   last_30_days: 'last 30 d',
+  last_7_days: 'last 7 d',
+  next_7_days: 'next 7 d',
+  this_quarter: 'this q',
+  last_quarter: 'last q',
   this_year: 'this y',
+  last_year: 'last y',
+  this_fiscal_year: 'this fy',
+  last_fiscal_year: 'last fy',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -784,29 +784,14 @@ function isLikelyDataRequest(message: string): boolean {
 }
 
 /**
- * Format provenance footer
+ * Format provenance footer - shows only the source
  */
 function formatProvenance(provenance: Provenance): string {
-  const parts = [];
-  
-  if (provenance.source) {
-    parts.push(`Source: ${provenance.source}`);
+  if (!provenance.source) {
+    return '';
   }
   
-  if (provenance.filter) {
-    parts.push(provenance.filter);
-  }
-  
-  const date = new Date(provenance.timestamp);
-  parts.push(`As of: ${date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric', 
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })}`);
-
-  return `\n\n---\n*${parts.join(' | ')}*`;
+  return `\n\n*Source: ${provenance.source}*`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

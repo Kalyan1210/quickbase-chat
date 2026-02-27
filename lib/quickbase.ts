@@ -170,7 +170,9 @@ export class QuickBaseClient {
       };
       if (where) body.where = where;
 
+      console.log('[QB DEBUG] getRecordCount:', JSON.stringify({ tableId, where, body }));
       const response = await this.client.post('/records/query', body);
+      console.log('[QB DEBUG] getRecordCount result:', response.data.metadata.totalRecords);
       return response.data.metadata.totalRecords;
     } catch (error) {
       console.error('Error counting records:', error);

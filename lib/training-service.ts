@@ -154,13 +154,17 @@ function normalizeTableValue(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   const key = value.toLowerCase().trim();
 
+  // Map aliases to valid table keys (must match tools.ts enum)
   const tableAliases: Record<string, string> = {
-    clients: 'children',
-    students: 'children',
-    child: 'children',
+    children: 'child_status',      // "children" questions use child_status table
+    students: 'child_status',      // "students" = children
+    kids: 'child_status',          // "kids" = children
+    child: 'child_status',         // singular
     family: 'families',
     class: 'classes',
     classroom: 'classes',
+    enrollments: 'class_enrollments',
+    class_enrollment: 'class_enrollments',
   };
 
   return tableAliases[key] || key;
@@ -223,6 +227,37 @@ function normalizeToolParams(
   if ('reportType' in normalized && toolName === 'run_report' && !('report' in normalized)) {
     normalized.report = normalizeReportValue(normalized.reportType);
     delete normalized.reportType;
+  }
+
+  // Normalize various status field names to 'status'
+  const statusAliases = ['Child_enrollment_status', 'enrollment_status', 'childStatus', 'enrollmentStatus'];
+  for (const alias of statusAliases) {
+    if (alias in normalized && !('status' in normalized)) {
+      normalized.status = normalized[alias];
+      delete normalized[alias];
+    }
+  }
+
+  // Remove invalid/unknown parameters that aren't in tool schema
+  const validParams: Record<string, string[]> = {
+    count_records: ['table', 'status', 'dateRange', 'metric'],
+    list_records: ['table', 'status', 'dateRange', 'limit'],
+    run_report: ['report'],
+    run_dynamic_report: ['tableName', 'reportName'],
+    search_all_reports: ['searchQuery'],
+    list_table_reports: ['tableName'],
+    explore_table_fields: ['tableName'],
+    query_any_table: ['tableName', 'action', 'limit'],
+    get_help: ['topic'],
+  };
+
+  if (toolName in validParams) {
+    const allowed = validParams[toolName];
+    for (const key of Object.keys(normalized)) {
+      if (!allowed.includes(key)) {
+        delete normalized[key];
+      }
+    }
   }
 
   if ('table' in normalized) {

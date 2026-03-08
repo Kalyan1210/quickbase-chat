@@ -29,11 +29,31 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
 
   const results = queryResults as Record<string, unknown>;
   
+  // Helper to extract value from QuickBase field format {value: X}
+  const extractValue = (fieldData: unknown): unknown => {
+    if (fieldData && typeof fieldData === 'object' && 'value' in fieldData) {
+      return (fieldData as { value: unknown }).value;
+    }
+    return fieldData;
+  };
+
+  // Transform records to extract values from QuickBase format
+  const transformRecords = (records: Record<string, unknown>[]): Record<string, unknown>[] => {
+    return records.map(record => {
+      const transformed: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(record)) {
+        transformed[key] = extractValue(value);
+      }
+      return transformed;
+    });
+  };
+
   // Check for report data with records
   if (results.data && results.fields) {
     const data = results.data as Record<string, unknown>;
     if (data.records && Array.isArray(data.records) && data.records.length > 0) {
-      const records = data.records as Record<string, unknown>[];
+      const rawRecords = data.records as Record<string, unknown>[];
+      const records = transformRecords(rawRecords);
       const columns = Object.keys(records[0]);
       
       artifacts.push({
@@ -68,7 +88,8 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
 
   // Check for list records result
   if (results.records && Array.isArray(results.records) && results.records.length > 0) {
-    const records = results.records as Record<string, unknown>[];
+    const rawRecords = results.records as Record<string, unknown>[];
+    const records = transformRecords(rawRecords);
     const columns = Object.keys(records[0]);
     
     artifacts.push({

@@ -29,6 +29,14 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
 
   const results = queryResults as Record<string, unknown>;
   
+  // Build field ID to label map if fields are provided
+  const fieldMap = new Map<string, string>();
+  if (results.fields && Array.isArray(results.fields)) {
+    for (const f of results.fields as Array<{ id: number; label: string }>) {
+      fieldMap.set(String(f.id), f.label);
+    }
+  }
+  
   // Helper to extract value from QuickBase field format {value: X}
   const extractValue = (fieldData: unknown): unknown => {
     if (fieldData && typeof fieldData === 'object' && 'value' in fieldData) {
@@ -37,12 +45,13 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
     return fieldData;
   };
 
-  // Transform records to extract values from QuickBase format
+  // Transform records to extract values and map field IDs to labels
   const transformRecords = (records: Record<string, unknown>[]): Record<string, unknown>[] => {
     return records.map(record => {
       const transformed: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(record)) {
-        transformed[key] = extractValue(value);
+        const label = fieldMap.get(key) || key;
+        transformed[label] = extractValue(value);
       }
       return transformed;
     });

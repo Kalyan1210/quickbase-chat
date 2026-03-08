@@ -156,10 +156,11 @@ function normalizeTableValue(value: unknown): unknown {
 
   // Map aliases to valid table keys (must match tools.ts enum)
   const tableAliases: Record<string, string> = {
-    children: 'child_status',      // "children" questions use child_status table
-    students: 'child_status',      // "students" = children
-    kids: 'child_status',          // "kids" = children
-    child: 'child_status',         // singular
+    children: 'clients',           // "children" questions use clients table
+    students: 'clients',           // "students" = children
+    kids: 'clients',               // "kids" = children
+    child: 'clients',              // singular
+    child_status: 'clients',       // map old child_status references to clients
     family: 'families',
     class: 'classes',
     classroom: 'classes',

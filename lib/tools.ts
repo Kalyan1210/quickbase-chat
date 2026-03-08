@@ -20,7 +20,7 @@ export const TOOLS: FunctionDeclaration[] = [
     name: 'count_records',
     description: `Count records in a known table. Use this for "how many" questions about:
 - families (Family table) - for family enrollment counts
-- child_status (Horizons Child Status table) - for children enrollment counts
+- clients (Clients table) - for children/students enrollment counts
 - class_enrollments (Child Class Enrollments) - for class enrollment counts
 - staff (Horizons Staff) - for staff counts
 - classes (Classes) - for class counts

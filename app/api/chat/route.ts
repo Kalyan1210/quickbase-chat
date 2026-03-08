@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Build conversation history for AI context
-    const conversationHistory: ChatMessage[] = conversation.messages.map((m) => ({
+    const conversationHistory: ChatMessage[] = conversation.messages.map((m: { role: string; content: string }) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));

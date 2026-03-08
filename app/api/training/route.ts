@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       examples,
-      categories: categories.map(c => ({ name: c.category, count: c._count.id })),
+      categories: categories.map((c: { category: string; _count: { id: number } }) => ({ name: c.category, count: c._count.id })),
       total: examples.length,
     });
   } catch (error) {

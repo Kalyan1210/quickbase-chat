@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       feedback,
-      statusCounts: statusCounts.map(s => ({ status: s.status, count: s._count.id })),
-      correctCounts: correctCounts.map(c => ({
+      statusCounts: statusCounts.map((s: { status: string; _count: { id: number } }) => ({ status: s.status, count: s._count.id })),
+      correctCounts: correctCounts.map((c: { isCorrect: boolean | null; _count: { id: number } }) => ({
         isCorrect: c.isCorrect,
         count: c._count.id,
       })),

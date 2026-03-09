@@ -29,14 +29,6 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
 
   const results = queryResults as Record<string, unknown>;
   
-  // Build field ID to label map if fields are provided
-  const fieldMap = new Map<string, string>();
-  if (results.fields && Array.isArray(results.fields)) {
-    for (const f of results.fields as Array<{ id: number; label: string }>) {
-      fieldMap.set(String(f.id), f.label);
-    }
-  }
-  
   // Helper to extract value from QuickBase field format {value: X}
   const extractValue = (fieldData: unknown): unknown => {
     if (fieldData && typeof fieldData === 'object' && 'value' in fieldData) {
@@ -45,8 +37,22 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
     return fieldData;
   };
 
-  // Transform records to extract values and map field IDs to labels
-  const transformRecords = (records: Record<string, unknown>[]): Record<string, unknown>[] => {
+  // Build field ID to label map from fields array
+  const buildFieldMap = (fields: unknown): Map<string, string> => {
+    const fieldMap = new Map<string, string>();
+    if (Array.isArray(fields)) {
+      for (const f of fields as Array<{ id: number; label: string }>) {
+        fieldMap.set(String(f.id), f.label);
+      }
+    }
+    return fieldMap;
+  };
+
+  // Transform records: extract values and map field IDs to labels
+  const transformRecords = (
+    records: Record<string, unknown>[],
+    fieldMap: Map<string, string>
+  ): Record<string, unknown>[] => {
     return records.map(record => {
       const transformed: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(record)) {
@@ -57,17 +63,20 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
     });
   };
 
-  // Check for report data with records
-  if (results.data && results.fields) {
-    const data = results.data as Record<string, unknown>;
-    if (data.records && Array.isArray(data.records) && data.records.length > 0) {
-      const rawRecords = data.records as Record<string, unknown>[];
-      const records = transformRecords(rawRecords);
+  // Check for report data (nested structure: results.data contains {data, fields, metadata})
+  if (results.data && typeof results.data === 'object') {
+    const reportData = results.data as Record<string, unknown>;
+    
+    // Report structure: data.data = records array, data.fields = field definitions
+    if (reportData.data && Array.isArray(reportData.data) && reportData.data.length > 0) {
+      const fieldMap = buildFieldMap(reportData.fields);
+      const rawRecords = reportData.data as Record<string, unknown>[];
+      const records = transformRecords(rawRecords, fieldMap);
       const columns = Object.keys(records[0]);
       
       artifacts.push({
         type: 'table',
-        title: provenance?.source || 'Query Results',
+        title: provenance?.source || 'Report Results',
         columns,
         rows: records,
         source: provenance?.source,
@@ -95,10 +104,11 @@ function extractArtifacts(queryResults: unknown, provenance?: { source?: string 
     }
   }
 
-  // Check for list records result
+  // Check for list records result (flat structure: results.records, results.fields)
   if (results.records && Array.isArray(results.records) && results.records.length > 0) {
+    const fieldMap = buildFieldMap(results.fields);
     const rawRecords = results.records as Record<string, unknown>[];
-    const records = transformRecords(rawRecords);
+    const records = transformRecords(rawRecords, fieldMap);
     const columns = Object.keys(records[0]);
     
     artifacts.push({

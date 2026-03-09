@@ -524,7 +524,7 @@ export function buildListQuery(params: ListParams): {
     tableId: config.id,
     select: config.selectFields,
     where: filters.length > 0 ? filters.join('AND') : undefined,
-    top: Math.min(params.limit || 10, 50),
+    top: Math.min(params.limit || 25, 100),
     tableName: config.name,
   };
 }

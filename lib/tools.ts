@@ -18,16 +18,20 @@ export const TOOLS: FunctionDeclaration[] = [
   // ─────────────────────────────────────────────────────────────────────────────
   {
     name: 'count_records',
-    description: `Count records in a known table. Use this for "how many" questions about:
-- families (Family table) - for family enrollment counts
-- clients (Clients table) - for children/students enrollment counts
-- class_enrollments (Child Class Enrollments) - for class enrollment counts
-- staff (Horizons Staff) - for staff counts
-- classes (Classes) - for class counts
-- attendance (Child Attendance & Meals) - for attendance counts
-- icp (Individual Child Plan) - for ICP counts
-- case_notes (Family Case Notes) - for case note counts
-- referrals (Admissions Referrals) - for referral counts`,
+    description: `Count records in a known table. ALWAYS use this for "how many" questions.
+
+IMPORTANT TABLE RULES:
+- "children", "kids", "students" → table='clients' (NEVER use child_status for enrollment counts)
+- "families" → table='families'
+- "staff", "teachers", "employees" → table='staff'
+- "classes", "classrooms" → table='classes'
+- "class enrollments" → table='class_enrollments'
+- "attendance" → table='attendance'
+- "ICPs", "child plans" → table='icp'
+- "case notes" → table='case_notes'
+- "referrals" → table='referrals'
+
+Use status='enrolled' for active enrollment counts. Use status='waitlist' for waitlist counts.`,
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -103,14 +107,17 @@ export const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'list_records',
-    description: `List records from a known table with basic info. Use for "show me" or "list" requests.
-Tables available (aligned with business dictionary):
-- families: Family records
-- child_status: Horizons Child Status (children enrollment status)
-- clients: Clients (children, parents, guardians)
-- class_enrollments: Child Class Enrollments
-- staff: Horizons Staff members
-- classes: Classes`,
+    description: `List records from a known table. Use for "show me", "list", or "who are" requests.
+
+IMPORTANT TABLE RULES (same as count_records):
+- "children", "kids", "students" → table='clients'
+- "families" → table='families'
+- "staff" → table='staff'
+- "classes" → table='classes'
+- "class enrollments" → table='class_enrollments'
+- "attendance" → table='attendance'
+
+Returns actual records with field values for display in a table.`,
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -139,7 +146,7 @@ Tables available (aligned with business dictionary):
         },
         limit: {
           type: SchemaType.NUMBER,
-          description: 'Maximum number of records to return (default 10, max 50)',
+          description: 'Maximum number of records to return (default 25, max 100)',
         },
       },
       required: ['table'],
@@ -178,7 +185,7 @@ Tables available (aligned with business dictionary):
   },
   {
     name: 'explore_table_fields',
-    description: 'Show all fields/columns in a specific table. Use when user asks "what fields does X have", "show me the structure of X", or wants to know what data a table contains.',
+    description: 'Show all fields/columns in a specific table. IMPORTANT: Use this BEFORE answering complex questions about specific data fields. Also use when user asks "what fields does X have", "show me the structure of X", or you need to verify which fields exist before querying.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -224,7 +231,7 @@ Tables available (aligned with business dictionary):
   },
   {
     name: 'query_any_table',
-    description: 'Query any table with a simple count or list. Use as fallback when the table is not in the core list. Less reliable but more flexible.',
+    description: 'Query any table with a simple count or list. Use ONLY as fallback when the table is not in the core list (count_records/list_records). Before using this, consider using explore_table_fields to understand the table structure first.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {

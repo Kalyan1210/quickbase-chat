@@ -2,11 +2,12 @@ import { prisma } from './db';
 import * as fs from 'fs';
 import * as path from 'path';
 import { TOOLS } from './tools';
+import OpenAI from 'openai';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRAINING SERVICE
 // Manages verified Q&A examples for improving AI responses
-// Uses keyword matching to find similar examples
+// Uses OpenAI embeddings for semantic matching (keyword fallback if no API key)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface VerifiedExample {
@@ -31,6 +32,93 @@ interface NormalizedExample {
 let examplesCache: VerifiedExample[] = [];
 let cacheLastUpdated: Date | null = null;
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
+
+// Embedding cache: parallel array to examplesCache
+let embeddingCache: number[][] = [];
+let embeddingCacheReady = false;
+let embeddingCacheBuildPromise: Promise<void> | null = null;
+
+const SIMILARITY_THRESHOLD = 0.72;
+
+// Lazy-init OpenAI client (only if key exists)
+let openaiClient: OpenAI | null = null;
+function getOpenAIClient(): OpenAI | null {
+  if (openaiClient) return openaiClient;
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return null;
+  openaiClient = new OpenAI({ apiKey: key });
+  return openaiClient;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMBEDDING UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function generateEmbedding(text: string): Promise<number[] | null> {
+  const client = getOpenAIClient();
+  if (!client) return null;
+  try {
+    const response = await client.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
+    });
+    return response.data[0].embedding;
+  } catch (error) {
+    console.error('Error generating embedding:', error);
+    return null;
+  }
+}
+
+async function generateEmbeddingsBatch(texts: string[]): Promise<(number[] | null)[]> {
+  const client = getOpenAIClient();
+  if (!client) return texts.map(() => null);
+  try {
+    // OpenAI batch limit is 2048 inputs; 158 examples is well within range
+    const response = await client.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: texts,
+    });
+    // Response data is ordered by index
+    const sorted = response.data.sort((a, b) => a.index - b.index);
+    return sorted.map(d => d.embedding);
+  } catch (error) {
+    console.error('Error generating batch embeddings:', error);
+    return texts.map(() => null);
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+async function buildEmbeddingCache(): Promise<void> {
+  if (examplesCache.length === 0) return;
+
+  const questions = examplesCache.map(ex => ex.question);
+  console.log(`Building embedding cache for ${questions.length} examples...`);
+  const embeddings = await generateEmbeddingsBatch(questions);
+
+  // Only use examples that got valid embeddings
+  const validCount = embeddings.filter(e => e !== null).length;
+  if (validCount === 0) {
+    console.warn('No embeddings generated - falling back to keyword matching');
+    embeddingCacheReady = false;
+    return;
+  }
+
+  embeddingCache = embeddings.map(e => e || []);
+  embeddingCacheReady = true;
+  console.log(`Embedding cache ready: ${validCount}/${questions.length} examples embedded`);
+}
 
 /**
  * Load verified examples from database into memory cache
@@ -64,17 +152,62 @@ export async function loadVerifiedExamples(): Promise<VerifiedExample[]> {
     }));
 
     cacheLastUpdated = now;
+    // Invalidate embedding cache so it rebuilds with new examples
+    embeddingCacheReady = false;
+    embeddingCacheBuildPromise = null;
     console.log(`Loaded ${examplesCache.length} verified Q&A examples into cache`);
     return examplesCache;
   } catch (error) {
     console.error('Error loading verified examples from database:', error);
-    // Return existing cache on error
     return examplesCache;
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIMILARITY SEARCH
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Find similar examples using keyword matching
+ * Find similar examples using OpenAI embeddings + cosine similarity
+ */
+async function findSimilarExamplesEmbedding(
+  question: string,
+  limit: number = 5
+): Promise<VerifiedExample[]> {
+  const examples = await loadVerifiedExamples();
+  if (examples.length === 0) return [];
+
+  // Build embedding cache on first call (deduped via promise)
+  if (!embeddingCacheReady) {
+    if (!embeddingCacheBuildPromise) {
+      embeddingCacheBuildPromise = buildEmbeddingCache();
+    }
+    await embeddingCacheBuildPromise;
+  }
+
+  if (!embeddingCacheReady) return findSimilarExamplesKeyword(question, limit);
+
+  // Embed the user's question
+  const questionEmbedding = await generateEmbedding(question);
+  if (!questionEmbedding) return findSimilarExamplesKeyword(question, limit);
+
+  // Score all examples by cosine similarity
+  const scored = examples.map((ex, i) => ({
+    example: ex,
+    score: embeddingCache[i]?.length > 0
+      ? cosineSimilarity(questionEmbedding, embeddingCache[i])
+      : 0,
+  }));
+
+  return scored
+    .filter(s => s.score >= SIMILARITY_THRESHOLD)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(s => s.example);
+}
+
+/**
+ * Find similar examples using keyword matching (fallback)
  */
 async function findSimilarExamplesKeyword(
   question: string,
@@ -90,26 +223,15 @@ async function findSimilarExamplesKeyword(
     const questionWords = lowerQuestion.split(/\s+/).filter(w => w.length > 2);
     
     for (const word of questionWords) {
-      if (exLower.includes(word)) {
-        score += 2;
-      }
-      if (ex.tags.some(tag => tag.toLowerCase().includes(word))) {
-        score += 1;
-      }
+      if (exLower.includes(word)) score += 2;
+      if (ex.tags.some(tag => tag.toLowerCase().includes(word))) score += 1;
     }
     
-    if (lowerQuestion.startsWith('how many') && exLower.startsWith('how many')) {
-      score += 3;
-    }
-    if (lowerQuestion.startsWith('show me') && exLower.startsWith('show me')) {
-      score += 3;
-    }
-    if (lowerQuestion.startsWith('what') && exLower.startsWith('what')) {
-      score += 2;
-    }
-    if (lowerQuestion.startsWith('list') && exLower.startsWith('list')) {
-      score += 2;
-    }
+    if (lowerQuestion.startsWith('how many') && exLower.startsWith('how many')) score += 3;
+    if (lowerQuestion.startsWith('show me') && exLower.startsWith('show me')) score += 3;
+    if (lowerQuestion.startsWith('show') && exLower.startsWith('show')) score += 2;
+    if (lowerQuestion.startsWith('what') && exLower.startsWith('what')) score += 2;
+    if (lowerQuestion.startsWith('list') && exLower.startsWith('list')) score += 2;
     
     return { example: ex, score };
   });
@@ -123,12 +245,15 @@ async function findSimilarExamplesKeyword(
 
 /**
  * Find similar examples based on question text
- * Uses keyword matching (fast and effective for hundreds of examples)
+ * Uses OpenAI embeddings if OPENAI_API_KEY is set, otherwise keyword fallback
  */
 export async function findSimilarExamples(
   question: string,
   limit: number = 5
 ): Promise<VerifiedExample[]> {
+  if (getOpenAIClient()) {
+    return findSimilarExamplesEmbedding(question, limit);
+  }
   return findSimilarExamplesKeyword(question, limit);
 }
 
